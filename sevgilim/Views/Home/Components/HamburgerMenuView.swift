@@ -17,6 +17,7 @@ struct HamburgerMenuView: View {
     @EnvironmentObject var surpriseService: SurpriseService
     @EnvironmentObject var specialDayService: SpecialDayService
     @EnvironmentObject var messageService: MessageService
+    @EnvironmentObject var secretVaultService: SecretVaultService
     
     let onPlansSelected: () -> Void
     let onMoviesSelected: () -> Void
@@ -25,6 +26,7 @@ struct HamburgerMenuView: View {
     let onSongsSelected: () -> Void
     let onSurprisesSelected: () -> Void
     let onSpecialDaysSelected: () -> Void
+    let onSecretVaultSelected: () -> Void
     
     var body: some View {
         VStack(spacing: 0) {
@@ -70,6 +72,14 @@ struct HamburgerMenuView: View {
                     count: surpriseService.surprises.count,
                     theme: themeManager.currentTheme,
                     action: onSurprisesSelected
+                )
+                
+                MinimalMenuButton(
+                    icon: "lock.shield.fill",
+                    title: "Gizli Kasa",
+                    count: secretVaultService.items.count,
+                    theme: themeManager.currentTheme,
+                    action: onSecretVaultSelected
                 )
                 
                 MinimalMenuButton(

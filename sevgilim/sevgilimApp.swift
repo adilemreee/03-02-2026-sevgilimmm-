@@ -29,6 +29,7 @@ struct sevgilimApp: App {
     @StateObject private var messageService = MessageService()
     @StateObject private var themeManager = ThemeManager()
     @StateObject private var greetingService = GreetingService()
+    @StateObject private var secretVaultService = SecretVaultService()
     
  
     
@@ -51,6 +52,7 @@ struct sevgilimApp: App {
                 .environmentObject(messageService)
                 .environmentObject(themeManager)
                 .environmentObject(greetingService)
+                .environmentObject(secretVaultService)
                 
                 
         }

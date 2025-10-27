@@ -20,6 +20,7 @@ struct MainTabView: View {
     @EnvironmentObject var songService: SongService
     @EnvironmentObject var storyService: StoryService
     @EnvironmentObject var messageService: MessageService
+    @EnvironmentObject var secretVaultService: SecretVaultService
     
     @State private var selectedTab = 0
     
@@ -91,6 +92,7 @@ struct MainTabView: View {
                 placeService.listenToPlaces(relationshipId: relationshipId)
                 songService.listenToSongs(relationshipId: relationshipId)
                 storyService.listenToStories(relationshipId: relationshipId, currentUserId: userId)
+                secretVaultService.listenToVault(relationshipId: relationshipId)
                 // messageService.listenToMessages() kaldırıldı - ChatView açıldığında başlayacak
                 
                 print("🎬 Tüm servisler başlatıldı - Story listener aktif")

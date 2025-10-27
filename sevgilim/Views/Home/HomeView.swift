@@ -32,7 +32,7 @@ struct HomeView: View {
     @State private var navigateToSurprises = false
     @State private var navigateToSpecialDays = false
     @State private var showingNotifications = false
-    @State private var showingVault = false
+    @State private var navigateToSecretVault = false
     
     let timer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
     
@@ -160,6 +160,7 @@ struct HomeView: View {
             .navigationDestination(isPresented: $navigateToSongs) { SongsView() }
             .navigationDestination(isPresented: $navigateToSurprises) { SurprisesView() }
             .navigationDestination(isPresented: $navigateToSpecialDays) { SpecialDaysView() }
+            .navigationDestination(isPresented: $navigateToSecretVault) { SecretVaultView() }
             
             // Hamburger Menu Sheet
             .sheet(isPresented: $showingMenu) {
@@ -171,7 +172,7 @@ struct HomeView: View {
                     onSongsSelected: { navigateWithDelay(to: $navigateToSongs) },
                     onSurprisesSelected: { navigateWithDelay(to: $navigateToSurprises) },
                     onSpecialDaysSelected: { navigateWithDelay(to: $navigateToSpecialDays) },
-                    
+                    onSecretVaultSelected: { navigateWithDelay(to: $navigateToSecretVault) }
                 )
                 .presentationDetents([.height(600)])
                 .presentationDragIndicator(.visible)
