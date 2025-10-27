@@ -1242,6 +1242,10 @@ struct AddSecretMediaView: View {
                 }
                 
                 await MainActor.run {
+                    secretVaultService.listenToVault(relationshipId: relationshipId)
+                }
+                
+                await MainActor.run {
                     uploadState.finish()
                     dismiss()
                 }
