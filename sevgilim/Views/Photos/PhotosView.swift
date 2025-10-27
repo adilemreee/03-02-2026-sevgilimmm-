@@ -4,6 +4,8 @@
 //
 
 import SwiftUI
+import AVKit
+import AVFoundation
 
 
 struct PhotosView: View {
@@ -267,7 +269,7 @@ struct PhotoCardModern: View {
     var body: some View {
         VStack(alignment: .leading, spacing: style.showsDetails ? 12 : 0) {
             ZStack(alignment: .topLeading) {
-                CachedAsyncImage(url: photo.imageURL, thumbnail: true) { image, size in
+                CachedAsyncImage(url: photo.displayThumbnailURL, thumbnail: true) { image, size in
                     let isLandscape = size.width > size.height && size.width > 0 && size.height > 0
                     
                     image
@@ -304,6 +306,14 @@ struct PhotoCardModern: View {
                     )
                     .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                 )
+                .overlay(alignment: .center) {
+                    if photo.isVideo {
+                        Image(systemName: "play.circle.fill")
+                            .font(.system(size: 40))
+                            .foregroundColor(.white)
+                            .shadow(color: .black.opacity(0.4), radius: 8, x: 0, y: 4)
+                    }
+                }
                 
                 if let location = photo.location, !location.isEmpty {
                     HStack(spacing: 6) {
@@ -506,7 +516,11 @@ struct AddPhotoView: View {
     @EnvironmentObject var themeManager: ThemeManager
     
     @State private var selectedImage: UIImage?
+    @State private var selectedVideoURL: URL?
+    @State private var videoPlayer: AVPlayer?
+    @State private var selectedVideoDuration: Double?
     @State private var showingImagePicker = false
+    @State private var showingVideoPicker = false
     @State private var title = ""
     @State private var location = ""
     @State private var date = Date()
@@ -548,14 +562,17 @@ struct AddPhotoView: View {
                 
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Kaydet") {
-                        uploadPhoto()
+                        uploadMedia()
                     }
-                    .disabled(selectedImage == nil || uploadState.isUploading)
+                    .disabled((selectedImage == nil && selectedVideoURL == nil) || uploadState.isUploading)
                 }
             }
         }
         .sheet(isPresented: $showingImagePicker) {
             ImagePicker(image: $selectedImage)
+        }
+        .sheet(isPresented: $showingVideoPicker) {
+            VideoPicker(videoURL: $selectedVideoURL)
         }
         .overlay(UploadStatusOverlay(state: uploadState))
         .alert(
@@ -569,31 +586,80 @@ struct AddPhotoView: View {
         } message: {
             Text(uploadState.errorMessage ?? "")
         }
+        .onChange(of: selectedImage) { _, newImage in
+            if newImage != nil {
+                selectedVideoURL = nil
+                clearVideoSelection()
+            }
+        }
+        .onChange(of: selectedVideoURL) { _, newURL in
+            if let url = newURL {
+                selectedImage = nil
+                setupVideoSelection(with: url)
+            } else {
+                clearVideoSelection()
+            }
+        }
+        .onDisappear {
+            clearVideoSelection()
+        }
     }
     
-    private func uploadPhoto() {
-        guard let image = selectedImage,
-              let userId = authService.currentUser?.id,
+    private func uploadMedia() {
+        guard let userId = authService.currentUser?.id,
               let relationshipId = authService.currentUser?.relationshipId else {
             uploadState.fail(with: "Kullanıcı bilgileri alınamadı")
             return
         }
         
-        uploadState.start()
+        let hasImage = selectedImage != nil
+        let hasVideo = selectedVideoURL != nil
+        
+        if hasImage == hasVideo {
+            uploadState.fail(with: "Lütfen bir fotoğraf veya video seçin.")
+            return
+        }
+        
+        uploadState.start(message: hasVideo ? "Video yükleniyor..." : "Fotoğraf yükleniyor...")
         Task {
             do {
-                let imageURL = try await StorageService.shared.uploadPhoto(image, relationshipId: relationshipId)
-                try await photoService.addPhoto(
-                    relationshipId: relationshipId,
-                    imageURL: imageURL,
-                    title: title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : title,
-                    date: date,
-                    location: location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : location,
-                    tags: tags.isEmpty ? nil : tags,
-                    userId: userId
-                )
+                if let image = selectedImage {
+                    let imageURL = try await StorageService.shared.uploadPhoto(image, relationshipId: relationshipId)
+                    try await photoService.addPhoto(
+                        relationshipId: relationshipId,
+                        imageURL: imageURL,
+                        thumbnailURL: nil,
+                        videoURL: nil,
+                        mediaType: .photo,
+                        duration: nil,
+                        title: normalizedTitle,
+                        date: date,
+                        location: normalizedLocation,
+                        tags: normalizedTags,
+                        userId: userId
+                    )
+                } else if let videoURL = selectedVideoURL {
+                    let uploadResult = try await StorageService.shared.uploadPhotoVideo(from: videoURL, relationshipId: relationshipId)
+                    try await photoService.addPhoto(
+                        relationshipId: relationshipId,
+                        imageURL: uploadResult.thumbnailURL ?? uploadResult.downloadURL,
+                        thumbnailURL: uploadResult.thumbnailURL ?? uploadResult.downloadURL,
+                        videoURL: uploadResult.downloadURL,
+                        mediaType: .video,
+                        duration: uploadResult.duration,
+                        title: normalizedTitle,
+                        date: date,
+                        location: normalizedLocation,
+                        tags: normalizedTags,
+                        userId: userId
+                    )
+                }
+                
                 await MainActor.run {
                     uploadState.finish()
+                    selectedImage = nil
+                    selectedVideoURL = nil
+                    clearVideoSelection()
                     dismiss()
                 }
             } catch {
@@ -614,12 +680,26 @@ struct AddPhotoView: View {
         tagInput = ""
     }
     
+    private var normalizedTitle: String? {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+    
+    private var normalizedLocation: String? {
+        let trimmed = location.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+    
+    private var normalizedTags: [String]? {
+        tags.isEmpty ? nil : tags
+    }
+    
     @ViewBuilder
     private var imagePickerSection: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("Fotoğraf")
+            Text("Medya")
                 .font(.headline)
-            Text("Birlikte çektiğiniz fotoğrafı seçin ve albümünüze ekleyin.")
+            Text("Birlikte çektiğiniz fotoğraf veya videoyu albümünüze ekleyin.")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
             
@@ -635,7 +715,7 @@ struct AddPhotoView: View {
                         RoundedRectangle(cornerRadius: 18)
                             .stroke(Color.white.opacity(0.15), lineWidth: 1)
                     )
-                    .shadow(color: .black.opacity(0.15), radius: 12, x: 0, y: 6)
+                .shadow(color: .black.opacity(0.15), radius: 12, x: 0, y: 6)
                 
                 HStack(spacing: 12) {
                     Button {
@@ -667,33 +747,123 @@ struct AddPhotoView: View {
                     }
                 }
                 .foregroundColor(themeManager.currentTheme.primaryColor)
-            } else {
-                Button {
-                    showingImagePicker = true
-                } label: {
-                    VStack(spacing: 16) {
-                        Image(systemName: "photo.on.rectangle")
-                            .font(.system(size: 44, weight: .medium))
-                            .foregroundColor(themeManager.currentTheme.primaryColor)
-                        Text("Fotoğraf seçmek için dokun")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
+            } else if let player = videoPlayer, selectedVideoURL != nil {
+                ZStack(alignment: .bottomLeading) {
+                    PhotoVideoPreviewPlayer(player: player)
+                        .frame(height: 260)
+                        .frame(maxWidth: .infinity)
+                        .clipShape(RoundedRectangle(cornerRadius: 18))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 18)
+                                .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                        )
+                        .shadow(color: .black.opacity(0.18), radius: 12, x: 0, y: 6)
+                        .onAppear {
+                            player.seek(to: .zero)
+                        }
+                    
+                    HStack(spacing: 10) {
+                        Image(systemName: "video.fill")
+                            .font(.caption.bold())
+                        Text(formattedVideoDuration ?? "Video")
+                            .font(.caption.bold())
                     }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 220)
-                    .background(
-                        RoundedRectangle(cornerRadius: 18)
-                            .fill(Color(.systemBackground).opacity(0.65))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 18)
-                            .strokeBorder(
-                                themeManager.currentTheme.primaryColor.opacity(0.35),
-                                style: StrokeStyle(lineWidth: 1.4, dash: [8, 6])
-                            )
-                    )
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Color.black.opacity(0.55), in: Capsule())
+                    .padding(14)
                 }
-                .buttonStyle(.plain)
+                
+                HStack(spacing: 12) {
+                    Button {
+                        showingVideoPicker = true
+                    } label: {
+                        Label("Videoyu Değiştir", systemImage: "arrow.triangle.2.circlepath.video")
+                            .font(.subheadline.bold())
+                            .padding(.vertical, 12)
+                            .frame(maxWidth: .infinity)
+                            .background(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .fill(themeManager.currentTheme.primaryColor.opacity(0.16))
+                            )
+                    }
+                    
+                    Button(role: .destructive) {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            selectedVideoURL = nil
+                            clearVideoSelection()
+                        }
+                    } label: {
+                        Label("Kaldır", systemImage: "trash")
+                            .font(.subheadline.bold())
+                            .padding(.vertical, 12)
+                            .frame(maxWidth: .infinity)
+                            .background(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .fill(Color.red.opacity(0.12))
+                            )
+                    }
+                }
+                .foregroundColor(themeManager.currentTheme.primaryColor)
+            } else {
+                VStack(spacing: 20) {
+                    Text("Ne eklemek istersin?")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.secondary)
+                    
+                    HStack(spacing: 14) {
+                        Button {
+                            showingImagePicker = true
+                        } label: {
+                            VStack(spacing: 12) {
+                                Image(systemName: "photo.on.rectangle")
+                                    .font(.system(size: 36, weight: .medium))
+                                Text("Fotoğraf Seç")
+                                    .font(.subheadline)
+                            }
+                            .foregroundColor(themeManager.currentTheme.primaryColor)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 180)
+                            .background(
+                                RoundedRectangle(cornerRadius: 18)
+                                    .fill(Color(.systemBackground).opacity(0.65))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 18)
+                                    .strokeBorder(
+                                        themeManager.currentTheme.primaryColor.opacity(0.35),
+                                        style: StrokeStyle(lineWidth: 1.4, dash: [8, 6])
+                                    )
+                            )
+                        }
+                        
+                        Button {
+                            showingVideoPicker = true
+                        } label: {
+                            VStack(spacing: 12) {
+                                Image(systemName: "video.badge.plus")
+                                    .font(.system(size: 36, weight: .medium))
+                                Text("Video Seç")
+                                    .font(.subheadline)
+                            }
+                            .foregroundColor(themeManager.currentTheme.primaryColor)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 180)
+                            .background(
+                                RoundedRectangle(cornerRadius: 18)
+                                    .fill(Color(.systemBackground).opacity(0.65))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 18)
+                                    .strokeBorder(
+                                        themeManager.currentTheme.primaryColor.opacity(0.35),
+                                        style: StrokeStyle(lineWidth: 1.4, dash: [8, 6])
+                                    )
+                            )
+                        }
+                    }
+                }
             }
         }
         .padding(20)
@@ -843,5 +1013,71 @@ struct AddPhotoView: View {
             .font(.caption.weight(.semibold))
             .foregroundColor(.secondary)
             .kerning(0.5)
+    }
+    
+    private func setupVideoSelection(with url: URL) {
+        clearVideoSelection()
+        videoPlayer = AVPlayer(url: url)
+        videoPlayer?.actionAtItemEnd = .pause
+        videoPlayer?.automaticallyWaitsToMinimizeStalling = false
+        videoPlayer?.seek(to: .zero)
+        selectedVideoDuration = videoDuration(for: url)
+    }
+    
+    private func clearVideoSelection() {
+        videoPlayer?.pause()
+        videoPlayer = nil
+        selectedVideoDuration = nil
+    }
+    
+    private func videoDuration(for url: URL) -> Double? {
+        let asset = AVURLAsset(url: url)
+        let duration = CMTimeGetSeconds(asset.duration)
+        return duration.isFinite ? duration : nil
+    }
+    
+    private var formattedVideoDuration: String? {
+        guard let duration = selectedVideoDuration else { return nil }
+        let totalSeconds = Int(duration.rounded())
+        let minutes = totalSeconds / 60
+        let seconds = totalSeconds % 60
+        return String(format: "%d:%02d", minutes, seconds)
+    }
+}
+
+private struct PhotoVideoPreviewPlayer: UIViewRepresentable {
+    let player: AVPlayer
+    
+    func makeUIView(context: Context) -> PlayerView {
+        let view = PlayerView()
+        view.playerLayer.player = player
+        view.isUserInteractionEnabled = false
+        return view
+    }
+    
+    func updateUIView(_ uiView: PlayerView, context: Context) {
+        if uiView.playerLayer.player !== player {
+            uiView.playerLayer.player = player
+        }
+    }
+    
+    final class PlayerView: UIView {
+        override static var layerClass: AnyClass { AVPlayerLayer.self }
+        
+        var playerLayer: AVPlayerLayer {
+            layer as! AVPlayerLayer
+        }
+        
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            playerLayer.videoGravity = .resizeAspectFill
+            playerLayer.backgroundColor = UIColor.black.cgColor
+        }
+
+        required init?(coder: NSCoder) {
+            super.init(coder: coder)
+            playerLayer.videoGravity = .resizeAspectFill
+            playerLayer.backgroundColor = UIColor.black.cgColor
+        }
     }
 }

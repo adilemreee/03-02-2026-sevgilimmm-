@@ -76,6 +76,57 @@ class StorageService {
         return try await uploadImage(image, path: path)
     }
     
+    func uploadPhotoVideo(from videoURL: URL, relationshipId: String) async throws -> MediaUploadResult {
+        let sizeLimit = 100 * 1024 * 1024 // 100 MB
+        let resourceValues = try videoURL.resourceValues(forKeys: [.fileSizeKey])
+        
+        if let fileSize = resourceValues.fileSize, fileSize > sizeLimit {
+            throw StorageError.fileTooLarge(maxMB: 100)
+        }
+        
+        let mediaId = UUID().uuidString
+        let ext = videoURL.pathExtension.lowercased()
+        let resolvedExtension = ext.isEmpty ? "mov" : ext
+        let storagePath = "relationships/\(relationshipId)/photos/videos/\(mediaId).\(resolvedExtension)"
+        let storageRef = storage.reference().child(storagePath)
+        
+        let metadata = StorageMetadata()
+        metadata.contentType = contentType(forVideoExtension: resolvedExtension)
+        metadata.cacheControl = "public, max-age=31536000"
+        
+        let uploadMetadata = try await storageRef.putFileAsync(from: videoURL, metadata: metadata)
+        let downloadURL = try await storageRef.downloadURL()
+        
+        let thumbnailImage = try await generateVideoThumbnail(url: videoURL)
+        let processedThumbnail = generateThumbnail(from: thumbnailImage, maxSize: 500)
+        
+        guard let thumbData = processedThumbnail.jpegData(compressionQuality: 0.65) else {
+            throw StorageError.invalidImage
+        }
+        
+        let thumbnailPath = "relationships/\(relationshipId)/photos/\(mediaId)_thumb.jpg"
+        let thumbnailRef = storage.reference().child(thumbnailPath)
+        let thumbnailMetadata = StorageMetadata()
+        thumbnailMetadata.contentType = "image/jpeg"
+        thumbnailMetadata.cacheControl = "public, max-age=31536000"
+        _ = try await thumbnailRef.putDataAsync(thumbData, metadata: thumbnailMetadata)
+        let thumbnailURL = try await thumbnailRef.downloadURL()
+        
+        let asset = AVURLAsset(url: videoURL)
+        let duration = CMTimeGetSeconds(asset.duration)
+        let durationValue = duration.isFinite ? duration : nil
+        
+        return MediaUploadResult(
+            downloadURL: downloadURL.absoluteString,
+            thumbnailURL: thumbnailURL.absoluteString,
+            storagePath: storagePath,
+            thumbnailPath: thumbnailPath,
+            sizeInBytes: uploadMetadata.size,
+            duration: durationValue,
+            contentType: metadata.contentType ?? "video/mp4"
+        )
+    }
+    
     func uploadSecretPhoto(_ image: UIImage, relationshipId: String) async throws -> MediaUploadResult {
         let sizeLimit = 50 * 1024 * 1024
         let optimizedImage = optimizeImage(image, maxDimension: 2048)
@@ -173,9 +224,13 @@ class StorageService {
         )
     }
     
-    func deleteImage(url: String) async throws {
+    func deleteFile(at url: String) async throws {
         let storageRef = storage.reference(forURL: url)
         try await storageRef.delete()
+    }
+    
+    func deleteImage(url: String) async throws {
+        try await deleteFile(at: url)
     }
     
     // MARK: - Image Optimization Helpers

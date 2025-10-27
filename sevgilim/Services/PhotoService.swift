@@ -63,15 +63,26 @@ class PhotoService: ObservableObject {
     
     // Preload images in cache for smooth scrolling
     private func preloadThumbnails(photos: [Photo]) {
-        let urls = photos.prefix(10).map { $0.imageURL }
+        let urls = photos.prefix(10).map { $0.thumbnailURL ?? $0.imageURL }
         Task.detached(priority: .background) {
             await ImageCacheService.shared.preloadImages(Array(urls), thumbnail: true)
         }
     }
     
-    func addPhoto(relationshipId: String, imageURL: String, title: String?, 
-                 date: Date, location: String?, tags: [String]?, userId: String) async throws {
-        let data: [String: Any] = [
+    func addPhoto(
+        relationshipId: String,
+        imageURL: String,
+        thumbnailURL: String?,
+        videoURL: String?,
+        mediaType: PhotoMediaType,
+        duration: Double?,
+        title: String?,
+        date: Date,
+        location: String?,
+        tags: [String]?,
+        userId: String
+    ) async throws {
+        var data: [String: Any] = [
             "relationshipId": relationshipId,
             "imageURL": imageURL,
             "title": title as Any,
@@ -79,8 +90,19 @@ class PhotoService: ObservableObject {
             "location": location as Any,
             "tags": tags as Any,
             "uploadedBy": userId,
-            "createdAt": Timestamp(date: Date())
+            "createdAt": Timestamp(date: Date()),
+            "mediaType": mediaType.rawValue
         ]
+        
+        if let thumbnailURL {
+            data["thumbnailURL"] = thumbnailURL
+        }
+        if let videoURL {
+            data["videoURL"] = videoURL
+        }
+        if let duration {
+            data["duration"] = duration
+        }
         
         try await db.collection("photos").addDocument(data: data)
     }
@@ -90,7 +112,18 @@ class PhotoService: ObservableObject {
         
         // Delete from storage (fire and forget for faster UX)
         Task.detached(priority: .background) {
-            try? await StorageService.shared.deleteImage(url: photo.imageURL)
+            var urlsToDelete = Set<String>()
+            urlsToDelete.insert(photo.imageURL)
+            if let thumbnailURL = photo.thumbnailURL {
+                urlsToDelete.insert(thumbnailURL)
+            }
+            if let videoURL = photo.videoURL {
+                urlsToDelete.insert(videoURL)
+            }
+            
+            for url in urlsToDelete {
+                try? await StorageService.shared.deleteFile(at: url)
+            }
         }
         
         // Delete from Firestore immediately

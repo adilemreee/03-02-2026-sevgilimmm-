@@ -5,6 +5,8 @@
 
 import SwiftUI
 import UIKit
+import AVKit
+import AVFoundation
 
 struct FullScreenPhotoViewer: View {
     @Environment(\.dismiss) private var dismiss
@@ -17,7 +19,7 @@ struct FullScreenPhotoViewer: View {
     @State private var showControls = true
     @State private var showShareSheet = false
     @State private var showDeleteAlert = false
-    @State private var imageToShare: UIImage?
+    @State private var shareItems: [Any]?
     @State private var hasDismissed = false
     
     private var photos: [Photo] { photoService.photos }
@@ -62,9 +64,17 @@ struct FullScreenPhotoViewer: View {
             }
         }
         .statusBar(hidden: photoCount > 0 ? !showControls : false)
-        .sheet(isPresented: $showShareSheet) {
-            if let image = imageToShare {
-                ShareSheet(items: [image])
+        .sheet(isPresented: Binding(
+            get: { showShareSheet && shareItems != nil },
+            set: { newValue in
+                if !newValue {
+                    showShareSheet = false
+                    shareItems = nil
+                }
+            }
+        )) {
+            if let items = shareItems {
+                ShareSheet(items: items)
             }
         }
         .alert("Fotoğrafı Sil", isPresented: $showDeleteAlert) {
@@ -160,6 +170,23 @@ struct FullScreenPhotoViewer: View {
     
     private var quickInfoChip: some View {
         HStack(spacing: 10) {
+            if currentPhoto?.isVideo == true {
+                HStack(spacing: 6) {
+                    Image(systemName: "video.fill")
+                        .font(.caption2)
+                    if let duration = currentPhoto?.duration {
+                        Text(videoDurationText(from: duration))
+                            .font(.caption.bold())
+                    } else {
+                        Text("Video")
+                            .font(.caption.bold())
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color.white.opacity(0.18), in: Capsule())
+            }
+            
             if let photo = currentPhoto, let location = photo.location, !location.isEmpty {
                 HStack(spacing: 6) {
                     Image(systemName: "location.fill")
@@ -183,6 +210,13 @@ struct FullScreenPhotoViewer: View {
         .foregroundColor(.white)
     }
     
+    private func videoDurationText(from duration: Double) -> String {
+        let totalSeconds = Int(duration.rounded())
+        let minutes = totalSeconds / 60
+        let seconds = totalSeconds % 60
+        return String(format: "%d:%02d", minutes, seconds)
+    }
+    
     private func actionButton(systemImage: String, color: Color = .white, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Circle()
@@ -197,14 +231,22 @@ struct FullScreenPhotoViewer: View {
     }
     
     private func shareCurrentPhoto() {
-        guard let photo = currentPhoto, let url = URL(string: photo.imageURL) else { return }
+        guard let photo = currentPhoto else { return }
         Task {
             do {
-                let (data, _) = try await URLSession.shared.data(from: url)
-                if let image = UIImage(data: data) {
+                if photo.isVideo, let videoURL = photo.videoURL {
+                    let localURL = try await VideoCacheService.shared.cachedURL(for: videoURL)
                     await MainActor.run {
-                        imageToShare = image
+                        shareItems = [localURL]
                         showShareSheet = true
+                    }
+                } else if let url = URL(string: photo.imageURL) {
+                    let (data, _) = try await URLSession.shared.data(from: url)
+                    if let image = UIImage(data: data) {
+                        await MainActor.run {
+                            shareItems = [image]
+                            showShareSheet = true
+                        }
                     }
                 }
             } catch {
@@ -258,6 +300,19 @@ private struct PhotoViewerContent: View {
     let photo: Photo
     let onTap: () -> Void
     
+    var body: some View {
+        if photo.isVideo {
+            PhotoVideoViewerContent(photo: photo, onTap: onTap)
+        } else {
+            PhotoImageViewerContent(photo: photo, onTap: onTap)
+        }
+    }
+}
+
+private struct PhotoImageViewerContent: View {
+    let photo: Photo
+    let onTap: () -> Void
+    
     @State private var scale: CGFloat = 1.0
     @State private var lastScale: CGFloat = 1.0
     @State private var offset: CGSize = .zero
@@ -280,12 +335,6 @@ private struct PhotoViewerContent: View {
                         Text("Yükleniyor...")
                             .font(.subheadline)
                             .foregroundColor(.white.opacity(0.7))
-                        Text(photo.imageURL)
-                            .font(.caption2)
-                            .foregroundColor(.white.opacity(0.5))
-                            .multilineTextAlignment(.center)
-                            .lineLimit(2)
-                            .padding(.horizontal)
                     }
                 } else if let error = loadError {
                     VStack(spacing: 16) {
@@ -406,6 +455,176 @@ private struct PhotoViewerContent: View {
                     isLoading = false
                 }
             }
+        }
+    }
+}
+
+private struct PhotoVideoViewerContent: View {
+    let photo: Photo
+    let onTap: () -> Void
+    
+    @State private var player: AVPlayer?
+    @State private var isLoading = true
+    @State private var showPlaceholder = true
+    @State private var loadError: Error?
+    @State private var timeObserver: Any?
+    @State private var endObserver: NSObjectProtocol?
+    @State private var hasStarted = false
+    
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                Color.black
+                    .ignoresSafeArea()
+                
+                if showPlaceholder {
+                    CachedAsyncImage(url: photo.displayThumbnailURL, thumbnail: false) { image, _ in
+                        image
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: geometry.size.width, height: geometry.size.height)
+                    } placeholder: {
+                        Color.black.opacity(0.2)
+                    }
+                }
+                
+                if let player = player {
+                    PhotoVideoPlayerController(player: player)
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .opacity(showPlaceholder ? 0 : 1)
+                        .contentShape(Rectangle())
+                        .simultaneousGesture(
+                            TapGesture().onEnded {
+                                onTap()
+                            }
+                        )
+                }
+                
+                if isLoading {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        .scaleEffect(1.8)
+                }
+                
+                if let error = loadError {
+                    VStack(spacing: 16) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 60))
+                            .foregroundColor(.yellow)
+                        Text("Video yüklenemedi")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                        Text(error.localizedDescription)
+                            .font(.caption)
+                            .foregroundColor(.white.opacity(0.7))
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
+                    }
+                }
+            }
+            .onAppear {
+                prepareVideo()
+            }
+            .onDisappear {
+                cleanup()
+            }
+        }
+    }
+    
+    private func prepareVideo() {
+        guard player == nil else { return }
+        Task {
+            guard let videoURLString = photo.videoURL else {
+                await MainActor.run {
+                    self.loadError = NSError(domain: "PhotoViewer", code: -2, userInfo: [NSLocalizedDescriptionKey: "Video bulunamadı"])
+                    self.isLoading = false
+                }
+                return
+            }
+            
+            do {
+                let localURL = try await VideoCacheService.shared.cachedURL(for: videoURLString)
+                let asset = AVURLAsset(url: localURL)
+                let playerItem = AVPlayerItem(asset: asset)
+                let player = AVPlayer(playerItem: playerItem)
+                player.actionAtItemEnd = .pause
+                player.automaticallyWaitsToMinimizeStalling = false
+                if #available(iOS 17.0, *) {
+                    _ = await player.seek(to: .zero)
+                } else {
+                    await player.seek(to: .zero)
+                }
+                
+                await MainActor.run {
+                    self.player = player
+                    self.addObservers(to: player)
+                    self.isLoading = false
+                    player.play()
+                }
+            } catch {
+                await MainActor.run {
+                    self.loadError = error
+                    self.isLoading = false
+                }
+            }
+        }
+    }
+    
+    private func addObservers(to player: AVPlayer) {
+        let interval = CMTime(seconds: 0.05, preferredTimescale: 600)
+        timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { time in
+            let elapsed = CMTimeGetSeconds(time)
+            if elapsed.isFinite, elapsed > 0.05, !hasStarted {
+                hasStarted = true
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showPlaceholder = false
+                }
+            }
+        }
+        
+        endObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: player.currentItem,
+            queue: .main
+        ) { _ in
+            player.seek(to: .zero)
+            player.play()
+        }
+    }
+    
+    private func cleanup() {
+        player?.pause()
+        if let observer = timeObserver, let player = player {
+            player.removeTimeObserver(observer)
+            timeObserver = nil
+        }
+        if let endObserver {
+            NotificationCenter.default.removeObserver(endObserver)
+            self.endObserver = nil
+        }
+        player = nil
+        hasStarted = false
+        isLoading = false
+        showPlaceholder = true
+    }
+}
+
+private struct PhotoVideoPlayerController: UIViewControllerRepresentable {
+    let player: AVPlayer
+    
+    func makeUIViewController(context: Context) -> AVPlayerViewController {
+        let controller = AVPlayerViewController()
+        controller.player = player
+        controller.showsPlaybackControls = true
+        controller.exitsFullScreenWhenPlaybackEnds = false
+        controller.videoGravity = .resizeAspect
+        controller.view.backgroundColor = .black
+        return controller
+    }
+    
+    func updateUIViewController(_ uiViewController: AVPlayerViewController, context: Context) {
+        if uiViewController.player !== player {
+            uiViewController.player = player
         }
     }
 }

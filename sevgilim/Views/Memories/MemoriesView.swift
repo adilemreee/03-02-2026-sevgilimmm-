@@ -366,6 +366,9 @@ struct MemoryDetailView: View {
     @State private var commentText = ""
     @State private var isSubmittingComment = false
     @State private var commentError: String?
+    @State private var isShowingPhotoViewer = false
+    @State private var photoViewerIndex = 0
+    @StateObject private var singlePhotoService = PhotoService()
     
     // Get current memory from service for live updates
     private var currentMemory: Memory {
@@ -378,22 +381,53 @@ struct MemoryDetailView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     // Photo
                     if let photoURL = currentMemory.photoURL {
-                        CachedAsyncImage(url: photoURL, thumbnail: false) { image, _ in
-                            image
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
+                        GeometryReader { geometry in
+                            Button {
+                                let photo = Photo(
+                                    id: currentMemory.id,
+                                    relationshipId: currentMemory.relationshipId,
+                                    imageURL: photoURL,
+                                    thumbnailURL: photoURL,
+                                    videoURL: nil,
+                                    title: currentMemory.title,
+                                    date: currentMemory.date,
+                                    location: currentMemory.location,
+                                    tags: currentMemory.tags,
+                                    uploadedBy: currentMemory.createdBy,
+                                    createdAt: currentMemory.createdAt,
+                                    mediaType: .photo,
+                                    duration: nil
+                                )
+                                singlePhotoService.photos = [photo]
+                                photoViewerIndex = 0
+                                isShowingPhotoViewer = true
+                            } label: {
+                                CachedAsyncImage(url: photoURL, thumbnail: false) { image, _ in
+                                    image
+                                        .resizable()
+                                        .scaledToFit()
+                                        .frame(maxWidth: geometry.size.width)
+                                        .frame(height: min(geometry.size.width * 0.75, 360))
+                                        .clipped()
+                                } placeholder: {
+                                    ZStack {
+                                        Color.gray.opacity(0.1)
+                                        ProgressView()
+                                    }
+                                }
                                 .frame(maxWidth: .infinity)
-                                .frame(height: 300)
-                                .clipped()
-                                .cornerRadius(12)
-                        } placeholder: {
-                            ZStack {
-                                Color.gray.opacity(0.1)
-                                    .frame(height: 300)
-                                ProgressView()
+                                .frame(height: min(geometry.size.width * 0.75, 360))
+                                .background(Color.black.opacity(0.05))
+                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                                )
                             }
-                            .cornerRadius(12)
+                            .buttonStyle(.plain)
                         }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: UIScreen.main.bounds.width * 0.75)
                     }
                     
                     // Title
@@ -539,11 +573,11 @@ struct MemoryDetailView: View {
                     }
                 }
                 .padding()
-            }
-            .navigationTitle("Anı Detayı")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
+        }
+        .navigationTitle("Anı Detayı")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
                     Button("Kapat") {
                         dismiss()
                     }
@@ -555,6 +589,17 @@ struct MemoryDetailView: View {
                             .foregroundColor(.red)
                     }
                 }
+        }
+        .onDisappear {
+            singlePhotoService.photos = []
+        }
+        .fullScreenCover(isPresented: $isShowingPhotoViewer) {
+            FullScreenPhotoViewer(currentIndex: $photoViewerIndex) {
+                isShowingPhotoViewer = false
+            }
+            .environmentObject(singlePhotoService)
+                .environmentObject(authService)
+                .environmentObject(themeManager)
             }
             .alert("Anıyı Sil", isPresented: $showingDeleteAlert) {
                 Button("İptal", role: .cancel) {}
