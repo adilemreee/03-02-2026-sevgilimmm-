@@ -49,12 +49,21 @@ service firebase.storage {
       allow write: if isSignedIn() && request.auth.uid == userId;
     }
 
-    // Stories
+    // Stories - photos
     match /relationships/{relationshipId}/stories/{fileName} {
       allow read: if isSignedIn();
       allow write: if isSignedIn()
           && request.resource.size < 10 * 1024 * 1024
           && request.resource.contentType.matches('image/.*');
+      allow delete: if isSignedIn();
+    }
+
+    // Stories - videos
+    match /relationships/{relationshipId}/stories/videos/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn()
+          && request.resource.size < 50 * 1024 * 1024
+          && request.resource.contentType.matches('video/.*');
       allow delete: if isSignedIn();
     }
 

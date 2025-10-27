@@ -6,10 +6,17 @@
 import Foundation
 import FirebaseFirestore
 
+enum StoryMediaType: String, Codable {
+    case photo
+    case video
+}
+
 struct Story: Identifiable, Codable {
     @DocumentID var id: String?
     let photoURL: String
     let thumbnailURL: String?
+    let mediaType: StoryMediaType
+    let duration: Double?
     let createdBy: String // userId
     let createdByName: String
     let createdByPhotoURL: String?
@@ -19,10 +26,16 @@ struct Story: Identifiable, Codable {
     var likedBy: [String]? // userId array - kim beğendi (optional - eski story'ler için)
     var likeTimestamps: [String: Date] // userId -> beğeni zamanı
     
+    var isVideo: Bool {
+        mediaType == .video
+    }
+    
     enum CodingKeys: String, CodingKey {
         case id
         case photoURL
         case thumbnailURL
+        case mediaType
+        case duration
         case createdBy
         case createdByName
         case createdByPhotoURL
@@ -39,6 +52,8 @@ struct Story: Identifiable, Codable {
         _id = try container.decode(DocumentID<String>.self, forKey: .id)
         photoURL = try container.decode(String.self, forKey: .photoURL)
         thumbnailURL = try container.decodeIfPresent(String.self, forKey: .thumbnailURL)
+        mediaType = try container.decodeIfPresent(StoryMediaType.self, forKey: .mediaType) ?? .photo
+        duration = try container.decodeIfPresent(Double.self, forKey: .duration)
         createdBy = try container.decode(String.self, forKey: .createdBy)
         createdByName = try container.decode(String.self, forKey: .createdByName)
         createdByPhotoURL = try container.decodeIfPresent(String.self, forKey: .createdByPhotoURL)
@@ -50,9 +65,11 @@ struct Story: Identifiable, Codable {
     }
     
     // Normal init
-    init(photoURL: String, thumbnailURL: String?, createdBy: String, createdByName: String, createdByPhotoURL: String?, relationshipId: String, createdAt: Date, viewedBy: [String], likedBy: [String]?, likeTimestamps: [String: Date] = [:]) {
+    init(photoURL: String, thumbnailURL: String?, mediaType: StoryMediaType, duration: Double?, createdBy: String, createdByName: String, createdByPhotoURL: String?, relationshipId: String, createdAt: Date, viewedBy: [String], likedBy: [String]?, likeTimestamps: [String: Date] = [:]) {
         self.photoURL = photoURL
         self.thumbnailURL = thumbnailURL
+        self.mediaType = mediaType
+        self.duration = duration
         self.createdBy = createdBy
         self.createdByName = createdByName
         self.createdByPhotoURL = createdByPhotoURL

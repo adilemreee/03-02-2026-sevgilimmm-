@@ -48,10 +48,55 @@ const sanitiseData = (data) => {
 };
 
 const normaliseTokens = (tokens = []) => {
-  const filtered = tokens.filter((token) => {
+  const list = Array.isArray(tokens) ? tokens : [tokens];
+  const filtered = list.filter((token) => {
     return typeof token === "string" && token.trim().length > 0;
   });
   return Array.from(new Set(filtered));
+};
+
+const applyDefaultApns = (message = {}) => {
+  const apns = {...(message.apns || {})};
+  const payload = {...(apns.payload || {})};
+  const aps = {...(payload.aps || {})};
+  if (typeof aps.sound !== "string" || !aps.sound.trim()) {
+    aps.sound = "default";
+  }
+  return {
+    ...message,
+    apns: {
+      ...apns,
+      payload: {
+        ...payload,
+        aps,
+      },
+    },
+  };
+};
+
+const chunkArray = (items, chunkSize = 200) => {
+  if (!Array.isArray(items) || chunkSize < 1) {
+    return [];
+  }
+  const chunks = [];
+  for (let i = 0; i < items.length; i += chunkSize) {
+    chunks.push(items.slice(i, i + chunkSize));
+  }
+  return chunks;
+};
+
+const truncate = (value, max = 120) => {
+  if (!value || typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed.length) {
+    return null;
+  }
+  if (trimmed.length <= max) {
+    return trimmed;
+  }
+  return `${trimmed.substring(0, max - 3)}...`;
 };
 
 const loadUsers = async (userIds = []) => {
@@ -62,23 +107,29 @@ const loadUsers = async (userIds = []) => {
     return new Map();
   }
 
-  const snapshots = await Promise.all(
-      uniqueIds.map(async (userId) => {
-        try {
-          return await firestore.collection("users").doc(userId).get();
-        } catch (error) {
-          logger.error("Failed to load user.", {userId, error});
-          return null;
-        }
-      }),
-  );
-
+  const idChunks = chunkArray(uniqueIds, 200);
   const map = new Map();
-  snapshots.forEach((snapshot, index) => {
-    const userId = uniqueIds[index];
-    if (snapshot && snapshot.exists) {
-      map.set(userId, {id: userId, ...snapshot.data()});
+
+  const chunkSnapshots = await Promise.all(idChunks.map(async (chunk) => {
+    const refs = chunk.map((userId) => {
+      return firestore.collection("users").doc(userId);
+    });
+    try {
+      return await firestore.getAll(...refs);
+    } catch (error) {
+      logger.error("Failed to load user chunk.", {userIds: chunk, error});
+      return refs.map(() => null);
     }
+  }));
+
+  chunkSnapshots.forEach((snapshots, chunkIndex) => {
+    const chunkIds = idChunks[chunkIndex];
+    snapshots.forEach((snapshot, snapshotIndex) => {
+      const userId = chunkIds[snapshotIndex];
+      if (snapshot && snapshot.exists) {
+        map.set(userId, {id: userId, ...snapshot.data()});
+      }
+    });
   });
 
   return map;
@@ -224,6 +275,67 @@ const computeNextSpecialDayDate = (specialDay, now = new Date()) => {
   return candidate;
 };
 
+const invalidTokenCodes = new Set([
+  "messaging/invalid-registration-token",
+  "messaging/registration-token-not-registered",
+  "messaging/unregistered",
+  "messaging/invalid-recipient",
+]);
+
+const isInvalidTokenError = (error) => {
+  if (!error) {
+    return false;
+  }
+
+  if (typeof error.code === "string" && invalidTokenCodes.has(error.code)) {
+    return true;
+  }
+
+  if (typeof error.message === "string") {
+    return Array.from(invalidTokenCodes).some((code) => {
+      return error.message.includes(code);
+    });
+  }
+
+  return false;
+};
+
+const findTokenOwners = async (tokens = []) => {
+  const cleanTokens = normaliseTokens(tokens);
+  if (!cleanTokens.length) {
+    return new Map();
+  }
+
+  const tokenOwners = new Map();
+
+  await Promise.all(cleanTokens.map(async (token) => {
+    const owners = new Set();
+    try {
+      const [arraySnapshot, singleSnapshot] = await Promise.all([
+        firestore.collection("users")
+            .where("fcmTokens", "array-contains", token)
+            .limit(50)
+            .get(),
+        firestore.collection("users")
+            .where("fcmToken", "==", token)
+            .limit(50)
+            .get(),
+      ]);
+
+      arraySnapshot.forEach((doc) => owners.add(doc.id));
+      singleSnapshot.forEach((doc) => owners.add(doc.id));
+    } catch (error) {
+      logger.error("Failed to resolve token owners.", {token, error});
+    }
+
+    if (owners.size > 0) {
+      tokenOwners.set(token, owners);
+    }
+  }));
+
+  return tokenOwners;
+};
+
 const pruneInvalidTokens = async (tokenOwners, failedTokens = []) => {
   if (!failedTokens.length) {
     return;
@@ -271,11 +383,13 @@ const sendPushToUsers = async ({userIds = [], notification, data}) => {
   const messaging = admin.messaging();
   const cleanData = sanitiseData(data);
 
-  const response = await messaging.sendEachForMulticast({
-    tokens,
-    notification,
-    data: cleanData,
-  });
+  const response = await messaging.sendEachForMulticast(
+      applyDefaultApns({
+        tokens,
+        notification,
+        data: cleanData,
+      }),
+  );
 
   if (response.failureCount > 0) {
     const failedTokens = response.responses.reduce((list, result, index) => {
@@ -319,15 +433,37 @@ exports.sendPushNotification = functions.https.onRequest(async (req, res) => {
     const messageData = sanitiseData(data);
 
     if (Array.isArray(tokens) && tokens.length > 0) {
-      const response = await messaging.sendEachForMulticast({
-        tokens,
-        notification,
-        data: messageData,
+      const cleanTokens = normaliseTokens(tokens);
+      if (!cleanTokens.length) {
+        return res.status(400).json({
+          error: "No valid tokens provided.",
+        });
+      }
+
+      const response = await messaging.sendEachForMulticast(
+          applyDefaultApns({
+            tokens: cleanTokens,
+            notification,
+            data: messageData,
+          }),
+      );
+
+      const invalidTokens = [];
+      response.responses.forEach((result, index) => {
+        if (!result.success && isInvalidTokenError(result.error)) {
+          invalidTokens.push(cleanTokens[index]);
+        }
       });
+
+      if (invalidTokens.length) {
+        const tokenOwners = await findTokenOwners(invalidTokens);
+        await pruneInvalidTokens(tokenOwners, invalidTokens);
+      }
 
       logger.info("Multicast notification dispatched.", {
         successCount: response.successCount,
         failureCount: response.failureCount,
+        invalidTokensPruned: invalidTokens.length,
       });
 
       return res.status(200).json({
@@ -338,22 +474,41 @@ exports.sendPushNotification = functions.https.onRequest(async (req, res) => {
     }
 
     if (typeof token === "string" && token.length > 0) {
-      await messaging.send({
-        token,
-        notification,
-        data: messageData,
-      });
+      const cleanToken = normaliseTokens(token)[0];
+      if (!cleanToken) {
+        return res.status(400).json({
+          error: "No valid token provided.",
+        });
+      }
+
+      try {
+        await messaging.send(
+            applyDefaultApns({
+              token: cleanToken,
+              notification,
+              data: messageData,
+            }),
+        );
+      } catch (sendError) {
+        if (isInvalidTokenError(sendError)) {
+          const tokenOwners = await findTokenOwners([cleanToken]);
+          await pruneInvalidTokens(tokenOwners, [cleanToken]);
+        }
+        throw sendError;
+      }
 
       logger.info("Notification sent to single device.");
       return res.status(200).json({success: true});
     }
 
     if (typeof topic === "string" && topic.length > 0) {
-      await messaging.send({
-        topic,
-        notification,
-        data: messageData,
-      });
+      await messaging.send(
+          applyDefaultApns({
+            topic,
+            notification,
+            data: messageData,
+          }),
+      );
 
       logger.info("Notification broadcast to topic.", {topic});
       return res.status(200).json({success: true, topic});
@@ -462,6 +617,303 @@ exports.onPhotoCreated = functions.firestore
           photoId: context.params.photoId,
           relationshipId: photo.relationshipId,
           uploadedBy: photo.uploadedBy,
+        },
+      });
+    });
+
+exports.onNoteCreated = functions.firestore
+    .document("notes/{noteId}")
+    .onCreate(async (snapshot, context) => {
+      const note = snapshot.data();
+      if (!note?.relationshipId || !note?.createdBy) {
+        return null;
+      }
+
+      const relationship = await fetchRelationship(note.relationshipId);
+      if (!relationship) {
+        return null;
+      }
+
+      const members = getRelationshipUserIds(relationship);
+      const recipients = members.filter((id) => id !== note.createdBy);
+      if (!recipients.length) {
+        return null;
+      }
+
+      const users = await loadUsers([note.createdBy]);
+      const creator = users.get(note.createdBy);
+      const creatorName = creator?.name || "Partnerin";
+
+      const contentPreview = truncate(note.content, 140);
+      const contentPreviewPart =
+          contentPreview && contentPreview !== note.title ?
+          contentPreview :
+          null;
+      const body =
+          buildNotificationBody([
+            note.title,
+            contentPreviewPart,
+          ]) || "Yeni bir not bıraktı.";
+
+      return sendPushToUsers({
+        userIds: recipients,
+        notification: {
+          title: `${creatorName} sana bir not bıraktı`,
+          body,
+        },
+        data: {
+          type: "note_new",
+          noteId: context.params.noteId,
+          relationshipId: note.relationshipId,
+          createdBy: note.createdBy,
+        },
+      });
+    });
+
+exports.onSongCreated = functions.firestore
+    .document("songs/{songId}")
+    .onCreate(async (snapshot, context) => {
+      const song = snapshot.data();
+      if (!song?.relationshipId || !song?.addedBy) {
+        return null;
+      }
+
+      const relationship = await fetchRelationship(song.relationshipId);
+      if (!relationship) {
+        return null;
+      }
+
+      const members = getRelationshipUserIds(relationship);
+      const recipients = members.filter((id) => id !== song.addedBy);
+      if (!recipients.length) {
+        return null;
+      }
+
+      const users = await loadUsers([song.addedBy]);
+      const adder = users.get(song.addedBy);
+      const adderName = adder?.name || "Partnerin";
+
+      const notePreview = truncate(song.note, 140);
+      const headline = buildNotificationBody([
+        song.title,
+        song.artist,
+      ]);
+
+      const body =
+          buildNotificationBody([
+            headline,
+            notePreview,
+          ]) ||
+          notePreview ||
+          "Birlikte dinlemek için yeni bir şarkı ekledi.";
+
+      return sendPushToUsers({
+        userIds: recipients,
+        notification: {
+          title: `${adderName} yeni bir şarkı ekledi`,
+          body,
+        },
+        data: {
+          type: "song_new",
+          songId: context.params.songId,
+          relationshipId: song.relationshipId,
+          addedBy: song.addedBy,
+        },
+      });
+    });
+
+exports.onMovieCreated = functions.firestore
+    .document("movies/{movieId}")
+    .onCreate(async (snapshot, context) => {
+      const movie = snapshot.data();
+      if (!movie?.relationshipId || !movie?.addedBy) {
+        return null;
+      }
+
+      const relationship = await fetchRelationship(movie.relationshipId);
+      if (!relationship) {
+        return null;
+      }
+
+      const members = getRelationshipUserIds(relationship);
+      const recipients = members.filter((id) => id !== movie.addedBy);
+      if (!recipients.length) {
+        return null;
+      }
+
+      const users = await loadUsers([movie.addedBy]);
+      const adder = users.get(movie.addedBy);
+      const adderName = adder?.name || "Partnerin";
+
+      const ratingText = movie.rating ? `Puan: ${movie.rating}/5` : null;
+      const body =
+          buildNotificationBody([
+            movie.title,
+            ratingText,
+            formatDateTime(movie.watchedDate),
+            truncate(movie.notes, 140),
+          ]) || "Listemize yeni bir film ekledi.";
+
+      return sendPushToUsers({
+        userIds: recipients,
+        notification: {
+          title: `${adderName} yeni bir film ekledi`,
+          body,
+        },
+        data: {
+          type: "movie_new",
+          movieId: context.params.movieId,
+          relationshipId: movie.relationshipId,
+          addedBy: movie.addedBy,
+        },
+      });
+    });
+
+exports.onPlaceCreated = functions.firestore
+    .document("places/{placeId}")
+    .onCreate(async (snapshot, context) => {
+      const place = snapshot.data();
+      if (!place?.relationshipId || !place?.addedBy) {
+        return null;
+      }
+
+      const relationship = await fetchRelationship(place.relationshipId);
+      if (!relationship) {
+        return null;
+      }
+
+      const members = getRelationshipUserIds(relationship);
+      const recipients = members.filter((id) => id !== place.addedBy);
+      if (!recipients.length) {
+        return null;
+      }
+
+      const users = await loadUsers([place.addedBy]);
+      const adder = users.get(place.addedBy);
+      const adderName = adder?.name || "Partnerin";
+
+      const body =
+          buildNotificationBody([
+            place.name,
+            place.address,
+            truncate(place.note, 140),
+          ]) || "Beraber keşfetmek için yeni bir yer ekledi.";
+
+      return sendPushToUsers({
+        userIds: recipients,
+        notification: {
+          title: `${adderName} yeni bir yer ekledi`,
+          body,
+        },
+        data: {
+          type: "place_new",
+          placeId: context.params.placeId,
+          relationshipId: place.relationshipId,
+          addedBy: place.addedBy,
+        },
+      });
+    });
+
+exports.onSecretVaultItemCreated = functions.firestore
+    .document("secretVault/{itemId}")
+    .onCreate(async (snapshot, context) => {
+      const item = snapshot.data();
+      if (!item?.relationshipId || !item?.uploadedBy) {
+        return null;
+      }
+
+      const relationship = await fetchRelationship(item.relationshipId);
+      if (!relationship) {
+        return null;
+      }
+
+      const members = getRelationshipUserIds(relationship);
+      const recipients = members.filter((id) => id !== item.uploadedBy);
+      if (!recipients.length) {
+        return null;
+      }
+
+      const users = await loadUsers([item.uploadedBy]);
+      const uploader = users.get(item.uploadedBy);
+      const uploaderName = uploader?.name || "Partnerin";
+
+      const mediaType = typeof item.type === "string" &&
+        item.type.toLowerCase() === "video" ?
+        "video" :
+        "fotoğraf";
+      const notePreview = truncate(item.note, 140);
+      const body =
+          buildNotificationBody([
+            item.title,
+            notePreview,
+          ]) || `Gizli kasaya yeni ${mediaType} ekledi.`;
+
+      return sendPushToUsers({
+        userIds: recipients,
+        notification: {
+          title: `${uploaderName} gizli kasaya yeni ${mediaType} ekledi`,
+          body,
+        },
+        data: {
+          type: "secret_vault_new",
+          itemId: context.params.itemId,
+          relationshipId: item.relationshipId,
+          uploadedBy: item.uploadedBy,
+          mediaType: mediaType,
+        },
+      });
+    });
+
+exports.onSurpriseCreated = functions.firestore
+    .document("surprises/{surpriseId}")
+    .onCreate(async (snapshot, context) => {
+      const surprise = snapshot.data();
+      if (!surprise?.relationshipId) {
+        return null;
+      }
+
+      const relationship = await fetchRelationship(surprise.relationshipId);
+      if (!relationship) {
+        return null;
+      }
+
+      const members = getRelationshipUserIds(relationship);
+      if (!members.length) {
+        return null;
+      }
+
+      const users = await loadUsers([surprise.createdBy, surprise.createdFor]);
+      const creator = users.get(surprise.createdBy);
+      const creatorName = creator?.name || "Partnerin";
+
+      const baseRecipients = surprise.createdFor ?
+        [surprise.createdFor] :
+        members;
+      const recipients = baseRecipients
+          .filter((id) => id && id !== surprise.createdBy);
+      if (!recipients.length) {
+        return null;
+      }
+
+      const revealHint = describeTimeUntil(surprise.revealDate);
+      const body =
+          buildNotificationBody([
+            surprise.title,
+            revealHint,
+          ]) || "Sana özel yeni bir sürpriz hazırlandı.";
+
+      return sendPushToUsers({
+        userIds: recipients,
+        notification: {
+          title: `${creatorName} sana bir sürpriz hazırladı 🎁`,
+          body,
+        },
+        data: {
+          type: "surprise_new",
+          surpriseId: context.params.surpriseId,
+          relationshipId: surprise.relationshipId,
+          createdBy: surprise.createdBy,
+          createdFor: surprise.createdFor,
         },
       });
     });

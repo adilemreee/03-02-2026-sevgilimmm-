@@ -48,10 +48,22 @@ const sanitiseData = (data) => {
 };
 
 const normaliseTokens = (tokens = []) => {
-  const filtered = tokens.filter((token) => {
+  const list = Array.isArray(tokens) ? tokens : [tokens];
+  const filtered = list.filter((token) => {
     return typeof token === "string" && token.trim().length > 0;
   });
   return Array.from(new Set(filtered));
+};
+
+const chunkArray = (items, chunkSize = 200) => {
+  if (!Array.isArray(items) || chunkSize < 1) {
+    return [];
+  }
+  const chunks = [];
+  for (let i = 0; i < items.length; i += chunkSize) {
+    chunks.push(items.slice(i, i + chunkSize));
+  }
+  return chunks;
 };
 
 const truncate = (value, max = 120) => {
@@ -76,23 +88,27 @@ const loadUsers = async (userIds = []) => {
     return new Map();
   }
 
-  const snapshots = await Promise.all(
-      uniqueIds.map(async (userId) => {
-        try {
-          return await firestore.collection("users").doc(userId).get();
-        } catch (error) {
-          logger.error("Failed to load user.", {userId, error});
-          return null;
-        }
-      }),
-  );
-
+  const idChunks = chunkArray(uniqueIds, 200);
   const map = new Map();
-  snapshots.forEach((snapshot, index) => {
-    const userId = uniqueIds[index];
-    if (snapshot && snapshot.exists) {
-      map.set(userId, {id: userId, ...snapshot.data()});
+
+  const chunkSnapshots = await Promise.all(idChunks.map(async (chunk) => {
+    const refs = chunk.map((userId) => firestore.collection("users").doc(userId));
+    try {
+      return await firestore.getAll(...refs);
+    } catch (error) {
+      logger.error("Failed to load user chunk.", {userIds: chunk, error});
+      return refs.map(() => null);
     }
+  }));
+
+  chunkSnapshots.forEach((snapshots, chunkIndex) => {
+    const chunkIds = idChunks[chunkIndex];
+    snapshots.forEach((snapshot, snapshotIndex) => {
+      const userId = chunkIds[snapshotIndex];
+      if (snapshot && snapshot.exists) {
+        map.set(userId, {id: userId, ...snapshot.data()});
+      }
+    });
   });
 
   return map;
@@ -238,6 +254,67 @@ const computeNextSpecialDayDate = (specialDay, now = new Date()) => {
   return candidate;
 };
 
+const invalidTokenCodes = new Set([
+  "messaging/invalid-registration-token",
+  "messaging/registration-token-not-registered",
+  "messaging/unregistered",
+  "messaging/invalid-recipient",
+]);
+
+const isInvalidTokenError = (error) => {
+  if (!error) {
+    return false;
+  }
+
+  if (typeof error.code === "string" && invalidTokenCodes.has(error.code)) {
+    return true;
+  }
+
+  if (typeof error.message === "string") {
+    return Array.from(invalidTokenCodes).some((code) => {
+      return error.message.includes(code);
+    });
+  }
+
+  return false;
+};
+
+const findTokenOwners = async (tokens = []) => {
+  const cleanTokens = normaliseTokens(tokens);
+  if (!cleanTokens.length) {
+    return new Map();
+  }
+
+  const tokenOwners = new Map();
+
+  await Promise.all(cleanTokens.map(async (token) => {
+    const owners = new Set();
+    try {
+      const [arraySnapshot, singleSnapshot] = await Promise.all([
+        firestore.collection("users")
+            .where("fcmTokens", "array-contains", token)
+            .limit(50)
+            .get(),
+        firestore.collection("users")
+            .where("fcmToken", "==", token)
+            .limit(50)
+            .get(),
+      ]);
+
+      arraySnapshot.forEach((doc) => owners.add(doc.id));
+      singleSnapshot.forEach((doc) => owners.add(doc.id));
+    } catch (error) {
+      logger.error("Failed to resolve token owners.", {token, error});
+    }
+
+    if (owners.size > 0) {
+      tokenOwners.set(token, owners);
+    }
+  }));
+
+  return tokenOwners;
+};
+
 const pruneInvalidTokens = async (tokenOwners, failedTokens = []) => {
   if (!failedTokens.length) {
     return;
@@ -333,15 +410,35 @@ exports.sendPushNotification = functions.https.onRequest(async (req, res) => {
     const messageData = sanitiseData(data);
 
     if (Array.isArray(tokens) && tokens.length > 0) {
+      const cleanTokens = normaliseTokens(tokens);
+      if (!cleanTokens.length) {
+        return res.status(400).json({
+          error: "No valid tokens provided.",
+        });
+      }
+
       const response = await messaging.sendEachForMulticast({
-        tokens,
+        tokens: cleanTokens,
         notification,
         data: messageData,
       });
 
+      const invalidTokens = [];
+      response.responses.forEach((result, index) => {
+        if (!result.success && isInvalidTokenError(result.error)) {
+          invalidTokens.push(cleanTokens[index]);
+        }
+      });
+
+      if (invalidTokens.length) {
+        const tokenOwners = await findTokenOwners(invalidTokens);
+        await pruneInvalidTokens(tokenOwners, invalidTokens);
+      }
+
       logger.info("Multicast notification dispatched.", {
         successCount: response.successCount,
         failureCount: response.failureCount,
+        invalidTokensPruned: invalidTokens.length,
       });
 
       return res.status(200).json({
@@ -352,11 +449,26 @@ exports.sendPushNotification = functions.https.onRequest(async (req, res) => {
     }
 
     if (typeof token === "string" && token.length > 0) {
-      await messaging.send({
-        token,
-        notification,
-        data: messageData,
-      });
+      const cleanToken = normaliseTokens(token)[0];
+      if (!cleanToken) {
+        return res.status(400).json({
+          error: "No valid token provided.",
+        });
+      }
+
+      try {
+        await messaging.send({
+          token: cleanToken,
+          notification,
+          data: messageData,
+        });
+      } catch (sendError) {
+        if (isInvalidTokenError(sendError)) {
+          const tokenOwners = await findTokenOwners([cleanToken]);
+          await pruneInvalidTokens(tokenOwners, [cleanToken]);
+        }
+        throw sendError;
+      }
 
       logger.info("Notification sent to single device.");
       return res.status(200).json({success: true});
@@ -548,24 +660,26 @@ exports.onSongCreated = functions.firestore
       const adder = users.get(song.addedBy);
       const adderName = adder?.name || "Partnerin";
 
+      const notePreview = truncate(song.note, 140);
       const headline = buildNotificationBody([
         song.title,
         song.artist,
       ]);
 
-      const body = headline ?
-        buildNotificationBody([
-          headline,
-          truncate(song.note, 140),
-        ]) :
-        truncate(song.note, 140) || "Birlikte dinlemek için yeni bir şarkı ekledi.";
-      const body = headline
-          ? buildNotificationBody([
+      const body =
+          buildNotificationBody([
             headline,
-            truncate(song.note, 140),
-          ])
-          : truncate(song.note, 140)
-            || "Birlikte dinlemek için yeni bir şarkı ekledi.";
+            notePreview,
+          ]) ||
+          notePreview ||
+          "Birlikte dinlemek için yeni bir şarkı ekledi.";
+
+      return sendPushToUsers({
+        userIds: recipients,
+        notification: {
+          title: `${adderName} yeni bir şarkı ekledi`,
+          body,
+        },
         data: {
           type: "song_new",
           songId: context.params.songId,
@@ -690,12 +804,15 @@ exports.onSecretVaultItemCreated = functions.firestore
       const uploader = users.get(item.uploadedBy);
       const uploaderName = uploader?.name || "Partnerin";
 
-      const users = await loadUsers([
-        place.addedBy,
-      ]);
+      const mediaType = typeof item.type === "string" &&
+        item.type.toLowerCase() === "video" ?
+        "video" :
+        "fotoğraf";
+      const notePreview = truncate(item.note, 140);
+      const body =
           buildNotificationBody([
             item.title,
-            truncate(item.note, 140),
+            notePreview,
           ]) || `Gizli kasaya yeni ${mediaType} ekledi.`;
 
       return sendPushToUsers({
@@ -737,8 +854,8 @@ exports.onSurpriseCreated = functions.firestore
       const creatorName = creator?.name || "Partnerin";
 
       const baseRecipients = surprise.createdFor ?
-      const creatorName =
-          creator?.name || "Partnerin";
+        [surprise.createdFor] :
+        members;
       const recipients = baseRecipients.filter((id) => id && id !== surprise.createdBy);
       if (!recipients.length) {
         return null;

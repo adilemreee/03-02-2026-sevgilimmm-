@@ -4,6 +4,8 @@
 //
 
 import SwiftUI
+import AVKit
+import AVFoundation
 
 struct StoryViewer: View {
     @Environment(\.dismiss) var dismiss
@@ -20,13 +22,38 @@ struct StoryViewer: View {
     @State private var isPaused = false
     @State private var cachedImage: UIImage?
     @State private var isLoading = true
+    @State private var videoPlayer: AVPlayer?
+    @State private var videoTimeObserver: Any?
+    @State private var videoEndObserver: NSObjectProtocol?
     @State private var dragOffset: CGFloat = 0
     @State private var showingDeleteAlert = false
     @State private var showingAddStory = false
     @State private var showingMessageInput = false
     @State private var messageText = ""
     
-    private let storyDuration: TimeInterval = 5 // 5 saniye
+    private let photoDuration: TimeInterval = 5 // Fotoğraflar için 5 saniye
+    
+    private var currentMediaDuration: TimeInterval {
+        guard let story = currentStory else { return photoDuration }
+        
+        if story.isVideo {
+            if let duration = story.duration, duration.isFinite, duration > 0 {
+                return min(max(duration, 3), 60)
+            }
+            
+            if let player = videoPlayer,
+               let item = player.currentItem {
+                let duration = CMTimeGetSeconds(item.duration)
+                if duration.isFinite, duration > 0 {
+                    return min(max(duration, 3), 60)
+                }
+            }
+            
+            return 10 // Varsayılan video süresi
+        } else {
+            return photoDuration
+        }
+    }
     
     init(stories: [Story], startIndex: Int = 0) {
         self.stories = stories
@@ -75,13 +102,41 @@ struct StoryViewer: View {
             } else if let story = currentStory {
                 // Story Content
                 ZStack {
-                    // Cached Image - Tam ekran
-                    if let image = cachedImage {
+                    if story.isVideo {
+                        if let image = cachedImage {
+                            Image(uiImage: image)
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        } else {
+                            Color.black
+                        }
+                        
+                        if let player = videoPlayer {
+                            StoryVideoPlayer(player: player)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .background(Color.black)
+                                .onAppear {
+                                    if !isPaused {
+                                        player.play()
+                                    }
+                                }
+                                .onDisappear {
+                                    player.pause()
+                                }
+                        }
+                    } else if let image = cachedImage {
                         Image(uiImage: image)
                             .resizable()
                             .aspectRatio(contentMode: .fit)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else if isLoading {
+                        Color.black
+                    } else {
+                        Color.black
+                    }
+                    
+                    if isLoading {
                         ProgressView()
                             .tint(.white)
                             .scaleEffect(1.5)
@@ -340,6 +395,7 @@ struct StoryViewer: View {
         }
         .onDisappear {
             stopTimer()
+            resetVideoPlayer()
         }
         .onChange(of: currentIndex) { _, _ in
             prepareForCurrentStory()
@@ -397,6 +453,7 @@ struct StoryViewer: View {
     // MARK: - Preparation
     private func prepareForCurrentStory() {
         stopTimer()
+        resetVideoPlayer()
         isPaused = false
         progress = 0
         loadCurrentStory()
@@ -452,9 +509,16 @@ struct StoryViewer: View {
     private func startTimer() {
         guard !isLoading else { return }
         stopTimer()
+        
+        if currentStory?.isVideo == true {
+            startVideoProgress()
+            return
+        }
+        
         timer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { _ in
             if !isPaused {
-                progress += 0.05 / storyDuration
+                let duration = max(currentMediaDuration, 0.1)
+                progress += 0.05 / duration
                 
                 if progress >= 1.0 {
                     nextStory()
@@ -466,14 +530,19 @@ struct StoryViewer: View {
     private func stopTimer() {
         timer?.invalidate()
         timer = nil
+        removeVideoObservers()
     }
     
     private func pauseTimer() {
         isPaused = true
+        videoPlayer?.pause()
     }
     
     private func resumeTimer() {
         isPaused = false
+        if currentStory?.isVideo == true {
+            videoPlayer?.play()
+        }
     }
     
     // MARK: - Navigation
@@ -505,25 +574,113 @@ struct StoryViewer: View {
         cachedImage = nil
         let targetStoryId = story.id
         
-        Task {
-            do {
-                let image = try await ImageCacheService.shared.loadImage(from: story.photoURL, thumbnail: false)
-                await MainActor.run {
-                    guard targetStoryId == currentStory?.id else { return }
-                    cachedImage = image
-                    isLoading = false
-                    startTimer()
+        if story.isVideo {
+            if let thumbnailURL = story.thumbnailURL {
+                Task {
+                    if let image = try? await ImageCacheService.shared.loadImage(from: thumbnailURL, thumbnail: false) {
+                        await MainActor.run {
+                            guard targetStoryId == currentStory?.id else { return }
+                            cachedImage = image
+                        }
+                    }
                 }
-            } catch {
-                print("❌ Story resmi yüklenemedi: \(error.localizedDescription)")
+            }
+            
+            guard let videoURL = URL(string: story.photoURL) else {
+                print("❌ Geçersiz video URL'si")
+                isLoading = false
+                return
+            }
+            
+            Task {
+                let asset = AVURLAsset(url: videoURL)
+                let playerItem = AVPlayerItem(asset: asset)
+                let player = AVPlayer(playerItem: playerItem)
+                player.actionAtItemEnd = .pause
+                
                 await MainActor.run {
                     guard targetStoryId == currentStory?.id else { return }
-                    cachedImage = nil
+                    videoPlayer = player
                     isLoading = false
+                    progress = 0
                     startTimer()
                 }
             }
+        } else {
+            Task {
+                do {
+                    let image = try await ImageCacheService.shared.loadImage(from: story.photoURL, thumbnail: false)
+                    await MainActor.run {
+                        guard targetStoryId == currentStory?.id else { return }
+                        cachedImage = image
+                        isLoading = false
+                        progress = 0
+                        startTimer()
+                    }
+                } catch {
+                    print("❌ Story resmi yüklenemedi: \(error.localizedDescription)")
+                    await MainActor.run {
+                        guard targetStoryId == currentStory?.id else { return }
+                        cachedImage = nil
+                        isLoading = false
+                        progress = 0
+                        startTimer()
+                    }
+                }
+            }
         }
+    }
+    
+    private func startVideoProgress() {
+        guard let player = videoPlayer else { return }
+        
+        removeVideoObservers()
+        progress = 0
+        
+        let duration = max(currentMediaDuration, 0.1)
+        let interval = CMTime(seconds: 0.05, preferredTimescale: 600)
+        
+        videoTimeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { time in
+            if self.isPaused { return }
+            
+            let elapsed = CMTimeGetSeconds(time)
+            if elapsed.isFinite, duration > 0 {
+                self.progress = CGFloat(min(elapsed / duration, 1.0))
+            }
+        }
+        
+        videoEndObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: player.currentItem,
+            queue: .main
+        ) { _ in
+            self.progress = 1.0
+            self.nextStory()
+        }
+        
+        if !isPaused {
+            player.play()
+        }
+    }
+    
+    private func removeVideoObservers() {
+        if let observer = videoTimeObserver, let player = videoPlayer {
+            player.removeTimeObserver(observer)
+            videoTimeObserver = nil
+        }
+        
+        if let endObserver = videoEndObserver {
+            NotificationCenter.default.removeObserver(endObserver)
+            videoEndObserver = nil
+        }
+    }
+    
+    private func resetVideoPlayer() {
+        if let player = videoPlayer {
+            player.pause()
+        }
+        removeVideoObservers()
+        videoPlayer = nil
     }
     
     // MARK: - Mark as Viewed
@@ -650,6 +807,42 @@ struct CachedAvatarView: View {
                     isLoading = false
                 }
             }
+        }
+    }
+}
+
+// MARK: - Story Video Player (No Controls)
+private struct StoryVideoPlayer: UIViewRepresentable {
+    let player: AVPlayer
+    
+    func makeUIView(context: Context) -> PlayerView {
+        let view = PlayerView()
+        view.playerLayer.player = player
+        view.isUserInteractionEnabled = false
+        return view
+    }
+    
+    func updateUIView(_ uiView: PlayerView, context: Context) {
+        if uiView.playerLayer.player !== player {
+            uiView.playerLayer.player = player
+        }
+    }
+    
+    final class PlayerView: UIView {
+        override static var layerClass: AnyClass { AVPlayerLayer.self }
+        
+        var playerLayer: AVPlayerLayer {
+            layer as! AVPlayerLayer
+        }
+        
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            playerLayer.videoGravity = .resizeAspect
+        }
+        
+        required init?(coder: NSCoder) {
+            super.init(coder: coder)
+            playerLayer.videoGravity = .resizeAspect
         }
     }
 }

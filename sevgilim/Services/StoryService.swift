@@ -8,6 +8,7 @@ import Combine
 import FirebaseFirestore
 import FirebaseStorage
 import UIKit
+import AVFoundation
 
 class StoryService: ObservableObject {
     @Published var stories: [Story] = []
@@ -65,32 +66,69 @@ class StoryService: ObservableObject {
     }
     
     // Story yükle
+    enum StoryUploadError: Error {
+        case invalidMedia
+        case mediaTooLarge
+    }
+    
     func uploadStory(
         relationshipId: String,
         userId: String,
         userName: String,
         userPhotoURL: String?,
-        image: UIImage
+        image: UIImage?,
+        videoURL: URL?
     ) async throws -> Story {
-        // Önce fotoğrafı upload et
-        let photoURL = try await uploadStoryImage(image: image, relationshipId: relationshipId, userId: userId)
+        // Medya doğrulaması: ya fotoğraf ya video seçilmiş olmalı
+        let hasImage = image != nil
+        let hasVideo = videoURL != nil
         
-        // Thumbnail oluştur ve upload et
-        let thumbnailURL = try? await uploadStoryThumbnail(image: image, relationshipId: relationshipId, userId: userId)
+        guard hasImage != hasVideo else {
+            throw StoryUploadError.invalidMedia
+        }
         
-        // Story oluştur
-        let story = Story(
-            photoURL: photoURL,
-            thumbnailURL: thumbnailURL,
-            createdBy: userId,
-            createdByName: userName,
-            createdByPhotoURL: userPhotoURL,
-            relationshipId: relationshipId,
-            createdAt: Date(),
-            viewedBy: [userId], // Oluşturan kişi otomatik görülmüş sayılır
-            likedBy: [], // Başlangıçta beğeni yok
-            likeTimestamps: [:]
-        )
+        let story: Story
+        
+        if let image = image {
+            // Fotoğraf upload
+            let photoURL = try await uploadStoryImage(image: image, relationshipId: relationshipId, userId: userId)
+            let thumbnailURL = try? await uploadStoryThumbnail(image: image, relationshipId: relationshipId, userId: userId)
+            
+            story = Story(
+                photoURL: photoURL,
+                thumbnailURL: thumbnailURL,
+                mediaType: .photo,
+                duration: nil,
+                createdBy: userId,
+                createdByName: userName,
+                createdByPhotoURL: userPhotoURL,
+                relationshipId: relationshipId,
+                createdAt: Date(),
+                viewedBy: [userId], // Oluşturan kişi otomatik görülmüş sayılır
+                likedBy: [], // Başlangıçta beğeni yok
+                likeTimestamps: [:]
+            )
+        } else if let videoURL = videoURL {
+            // Video upload
+            let videoResult = try await uploadStoryVideo(videoURL: videoURL, relationshipId: relationshipId, userId: userId)
+            
+            story = Story(
+                photoURL: videoResult.downloadURL,
+                thumbnailURL: videoResult.thumbnailURL,
+                mediaType: .video,
+                duration: videoResult.duration,
+                createdBy: userId,
+                createdByName: userName,
+                createdByPhotoURL: userPhotoURL,
+                relationshipId: relationshipId,
+                createdAt: Date(),
+                viewedBy: [userId],
+                likedBy: [],
+                likeTimestamps: [:]
+            )
+        } else {
+            throw StoryUploadError.invalidMedia
+        }
         
         // Firestore'a kaydet
         let docRef = try db.collection("stories").addDocument(from: story)
@@ -157,6 +195,68 @@ class StoryService: ObservableObject {
         // Download URL al
         let downloadURL = try await storageRef.downloadURL()
         return downloadURL.absoluteString
+    }
+    
+    private func uploadStoryVideo(videoURL: URL, relationshipId: String, userId: String) async throws -> (downloadURL: String, thumbnailURL: String?, duration: Double?) {
+        let sizeLimit = 50 * 1024 * 1024 // 50 MB
+        let resourceValues = try videoURL.resourceValues(forKeys: [.fileSizeKey])
+        if let fileSize = resourceValues.fileSize, fileSize > sizeLimit {
+            throw StoryUploadError.mediaTooLarge
+        }
+        
+        let timestamp = Int(Date().timeIntervalSince1970)
+        let ext = videoURL.pathExtension.lowercased()
+        let resolvedExtension = ext.isEmpty ? "mov" : ext
+        let fileName = "story_\(userId)_\(timestamp).\(resolvedExtension)"
+        let storagePath = "relationships/\(relationshipId)/stories/videos/\(fileName)"
+        let storageRef = storage.reference().child(storagePath)
+        
+        let metadata = StorageMetadata()
+        metadata.contentType = contentType(forVideoExtension: resolvedExtension)
+        
+        _ = try await storageRef.putFileAsync(from: videoURL, metadata: metadata)
+        let downloadURL = try await storageRef.downloadURL()
+        
+        let thumbnailImage = try await generateVideoThumbnail(url: videoURL)
+        let thumbnailURL = try? await uploadStoryThumbnail(image: thumbnailImage, relationshipId: relationshipId, userId: userId)
+        
+        let asset = AVURLAsset(url: videoURL)
+        let durationSeconds = CMTimeGetSeconds(asset.duration)
+        let duration = durationSeconds.isFinite ? durationSeconds : nil
+        
+        return (downloadURL.absoluteString, thumbnailURL, duration)
+    }
+    
+    private func contentType(forVideoExtension ext: String) -> String {
+        switch ext {
+        case "mp4":
+            return "video/mp4"
+        case "mov":
+            return "video/quicktime"
+        case "m4v":
+            return "video/x-m4v"
+        default:
+            return "video/mp4"
+        }
+    }
+    
+    private func generateVideoThumbnail(url: URL) async throws -> UIImage {
+        try await withCheckedThrowingContinuation { continuation in
+            let asset = AVAsset(url: url)
+            let generator = AVAssetImageGenerator(asset: asset)
+            generator.appliesPreferredTrackTransform = true
+            let time = CMTime(seconds: 0.1, preferredTimescale: 600)
+            
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    let cgImage = try generator.copyCGImage(at: time, actualTime: nil)
+                    let image = UIImage(cgImage: cgImage)
+                    continuation.resume(returning: image)
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
     }
     
     // Story'yi görüldü olarak işaretle

@@ -48,12 +48,9 @@ struct HamburgerMenuView: View {
                             endPoint: .trailing
                         )
                     )
-                
-                Text("AŞKIMSIN 🧡")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.secondary)
+            
             }
-            .padding(.top, 8)
+            .padding(.top, 24)
             .padding(.bottom, 24)
             
             // Menu Items - Minimal Design
