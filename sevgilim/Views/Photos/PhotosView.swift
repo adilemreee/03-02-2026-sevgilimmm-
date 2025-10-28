@@ -4,7 +4,7 @@
 //
 
 import SwiftUI
-import AVKit
+import PhotosUI
 import AVFoundation
 
 
@@ -73,8 +73,15 @@ struct PhotosView: View {
     
     var body: some View {
         ZStack {
-            Color(.systemGroupedBackground)
-                .ignoresSafeArea()
+            LinearGradient(
+                colors: [
+                    themeManager.currentTheme.primaryColor.opacity(0.3),
+                    themeManager.currentTheme.secondaryColor.opacity(0.2)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
             
             VStack(spacing: 0) {
                 // Compact Header
@@ -383,7 +390,7 @@ struct PhotoCardModern: View {
             Group {
                 if style.showsDetails {
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(.ultraThinMaterial)
+                        .fill(Color(.secondarySystemBackground))
                 }
             }
         )
@@ -509,8 +516,9 @@ struct AddPhotoView: View {
     
     @State private var selectedImage: UIImage?
     @State private var selectedVideoURL: URL?
-    @State private var videoPlayer: AVPlayer?
     @State private var selectedVideoDuration: Double?
+    @State private var selectedVideoThumbnail: UIImage?
+    @State private var isGeneratingVideoThumbnail = false
     @State private var showingImagePicker = false
     @State private var showingVideoPicker = false
     @State private var title = ""
@@ -738,20 +746,35 @@ struct AddPhotoView: View {
                     }
                 }
                 .foregroundColor(themeManager.currentTheme.primaryColor)
-            } else if let player = videoPlayer, selectedVideoURL != nil {
+            } else if selectedVideoURL != nil {
                 ZStack(alignment: .bottomLeading) {
-                    PhotoVideoPreviewPlayer(player: player)
-                        .frame(height: 260)
-                        .frame(maxWidth: .infinity)
-                        .clipShape(RoundedRectangle(cornerRadius: 18))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 18)
-                                .stroke(Color.white.opacity(0.15), lineWidth: 1)
-                        )
-                        .shadow(color: .black.opacity(0.18), radius: 12, x: 0, y: 6)
-                        .onAppear {
-                            player.seek(to: .zero)
-                        }
+                    if let thumbnail = selectedVideoThumbnail {
+                        Image(uiImage: thumbnail)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(height: 260)
+                            .frame(maxWidth: .infinity)
+                            .clipped()
+                            .clipShape(RoundedRectangle(cornerRadius: 18))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 18)
+                                    .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                            )
+                    } else {
+                        RoundedRectangle(cornerRadius: 18)
+                            .fill(Color(.systemBackground).opacity(0.65))
+                            .frame(height: 260)
+                            .frame(maxWidth: .infinity)
+                            .overlay {
+                                if isGeneratingVideoThumbnail {
+                                    ProgressView()
+                                } else {
+                                    Image(systemName: "video")
+                                        .font(.system(size: 32, weight: .medium))
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                    }
                     
                     HStack(spacing: 10) {
                         Image(systemName: "video.fill")
@@ -818,7 +841,7 @@ struct AddPhotoView: View {
                             .frame(height: 180)
                             .background(
                                 RoundedRectangle(cornerRadius: 18)
-                                    .fill(Color(.systemBackground).opacity(0.65))
+                                    .fill(.ultraThinMaterial)
                             )
                             .overlay(
                                 RoundedRectangle(cornerRadius: 18)
@@ -843,7 +866,7 @@ struct AddPhotoView: View {
                             .frame(height: 180)
                             .background(
                                 RoundedRectangle(cornerRadius: 18)
-                                    .fill(Color(.systemBackground).opacity(0.65))
+                                    .fill(.ultraThinMaterial)
                             )
                             .overlay(
                                 RoundedRectangle(cornerRadius: 18)
@@ -1004,18 +1027,17 @@ struct AddPhotoView: View {
     }
     
     private func setupVideoSelection(with url: URL) {
-        clearVideoSelection()
-        videoPlayer = AVPlayer(url: url)
-        videoPlayer?.actionAtItemEnd = .pause
-        videoPlayer?.automaticallyWaitsToMinimizeStalling = false
-        videoPlayer?.seek(to: .zero)
         selectedVideoDuration = videoDuration(for: url)
+        selectedVideoThumbnail = nil
+        isGeneratingVideoThumbnail = true
+        generateVideoThumbnail(from: url)
     }
     
     private func clearVideoSelection() {
-        videoPlayer?.pause()
-        videoPlayer = nil
+        selectedVideoURL = nil
         selectedVideoDuration = nil
+        selectedVideoThumbnail = nil
+        isGeneratingVideoThumbnail = false
     }
     
     private func videoDuration(for url: URL) -> Double? {
@@ -1031,41 +1053,26 @@ struct AddPhotoView: View {
         let seconds = totalSeconds % 60
         return String(format: "%d:%02d", minutes, seconds)
     }
-}
 
-private struct PhotoVideoPreviewPlayer: UIViewRepresentable {
-    let player: AVPlayer
-    
-    func makeUIView(context: Context) -> PlayerView {
-        let view = PlayerView()
-        view.playerLayer.player = player
-        view.isUserInteractionEnabled = false
-        return view
-    }
-    
-    func updateUIView(_ uiView: PlayerView, context: Context) {
-        if uiView.playerLayer.player !== player {
-            uiView.playerLayer.player = player
-        }
-    }
-    
-    final class PlayerView: UIView {
-        override static var layerClass: AnyClass { AVPlayerLayer.self }
-        
-        var playerLayer: AVPlayerLayer {
-            layer as! AVPlayerLayer
-        }
-        
-        override init(frame: CGRect) {
-            super.init(frame: frame)
-            playerLayer.videoGravity = .resizeAspectFill
-            playerLayer.backgroundColor = UIColor.black.cgColor
-        }
-
-        required init?(coder: NSCoder) {
-            super.init(coder: coder)
-            playerLayer.videoGravity = .resizeAspectFill
-            playerLayer.backgroundColor = UIColor.black.cgColor
+    private func generateVideoThumbnail(from url: URL) {
+        isGeneratingVideoThumbnail = true
+        Task.detached(priority: .utility) {
+            let asset = AVURLAsset(url: url)
+            let generator = AVAssetImageGenerator(asset: asset)
+            generator.appliesPreferredTrackTransform = true
+            let time = CMTime(seconds: 0.1, preferredTimescale: 600)
+            let thumbnailImage: UIImage?
+            do {
+                let cgImage = try generator.copyCGImage(at: time, actualTime: nil)
+                thumbnailImage = UIImage(cgImage: cgImage)
+            } catch {
+                thumbnailImage = nil
+            }
+            await MainActor.run {
+                guard self.selectedVideoURL == url else { return }
+                self.selectedVideoThumbnail = thumbnailImage
+                self.isGeneratingVideoThumbnail = false
+            }
         }
     }
 }
