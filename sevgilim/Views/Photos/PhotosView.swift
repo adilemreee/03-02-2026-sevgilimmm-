@@ -73,16 +73,8 @@ struct PhotosView: View {
     
     var body: some View {
         ZStack {
-            // Gradient Background
-            LinearGradient(
-                colors: [
-                    themeManager.currentTheme.primaryColor.opacity(0.3),
-                    themeManager.currentTheme.secondaryColor.opacity(0.2)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
+            Color(.systemGroupedBackground)
+                .ignoresSafeArea()
             
             VStack(spacing: 0) {
                 // Compact Header
@@ -181,7 +173,7 @@ struct PhotosView: View {
                         if photoService.isLoading {
                             ProgressView()
                                 .padding()
-                                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+                                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                         }
                     }
                 }
@@ -715,7 +707,6 @@ struct AddPhotoView: View {
                         RoundedRectangle(cornerRadius: 18)
                             .stroke(Color.white.opacity(0.15), lineWidth: 1)
                     )
-                .shadow(color: .black.opacity(0.15), radius: 12, x: 0, y: 6)
                 
                 HStack(spacing: 12) {
                     Button {
@@ -868,8 +859,7 @@ struct AddPhotoView: View {
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .shadow(color: .black.opacity(0.08), radius: 16, x: 0, y: 10)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
     
     @ViewBuilder
@@ -933,8 +923,7 @@ struct AddPhotoView: View {
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .shadow(color: .black.opacity(0.08), radius: 16, x: 0, y: 10)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
     
     @ViewBuilder
@@ -1004,8 +993,7 @@ struct AddPhotoView: View {
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .shadow(color: .black.opacity(0.08), radius: 16, x: 0, y: 10)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
     
     private func detailFieldLabel(_ text: String) -> some View {
