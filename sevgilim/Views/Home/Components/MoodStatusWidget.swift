@@ -18,7 +18,7 @@ struct MoodStatusWidget: View {
         VStack(alignment: .leading, spacing: 12) {
             Label("Ruh Hali", systemImage: "face.smiling")
                 .font(.subheadline.weight(.semibold))
-                .foregroundColor(theme.primaryColor)
+                .foregroundColor(.white)
             
             HStack(spacing: 12) {
                 MoodStatusChip(
@@ -82,7 +82,7 @@ private struct MoodStatusChip: View {
                 Text(subtitle.uppercased())
                     .font(.caption2)
                     .fontWeight(.semibold)
-                    .foregroundColor(highlightColor)
+                    .foregroundColor(.white)
                 
                 if isCurrentUser, isUpdating {
                     ProgressView()
