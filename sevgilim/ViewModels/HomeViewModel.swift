@@ -17,6 +17,7 @@ final class HomeViewModel: ObservableObject {
     private let surpriseService: SurpriseService
     private let specialDayService: SpecialDayService
     private let messageServiceRef: MessageService
+    private let moodService: MoodService
     
     private var cancellables: Set<AnyCancellable> = []
     
@@ -29,7 +30,8 @@ final class HomeViewModel: ObservableObject {
         planService: PlanService,
         surpriseService: SurpriseService,
         specialDayService: SpecialDayService,
-        messageService: MessageService
+        messageService: MessageService,
+        moodService: MoodService
     ) {
         self.authService = authService
         self.relationshipService = relationshipService
@@ -40,6 +42,7 @@ final class HomeViewModel: ObservableObject {
         self.surpriseService = surpriseService
         self.specialDayService = specialDayService
         self.messageServiceRef = messageService
+        self.moodService = moodService
         
         observeServices()
     }
@@ -91,6 +94,31 @@ final class HomeViewModel: ObservableObject {
     var messageService: MessageService {
         messageServiceRef
     }
+
+    var currentMoodStatus: MoodStatus? {
+        guard let userId = currentUser?.id else { return nil }
+        return moodService.mood(for: userId)
+    }
+    
+    var partnerMoodStatus: MoodStatus? {
+        guard let userId = currentUser?.id,
+              let relationship = relationship else { return nil }
+        let partnerId = relationship.partnerId(for: userId)
+        return moodService.mood(for: partnerId)
+    }
+    
+    func updateMood(to mood: MoodFeeling) async {
+        guard let relationshipId = authService.currentUser?.relationshipId,
+              let userId = authService.currentUser?.id else {
+            return
+        }
+        
+        do {
+            try await moodService.setMood(relationshipId: relationshipId, userId: userId, mood: mood)
+        } catch {
+            print("❌ Mood update failed: \(error.localizedDescription)")
+        }
+    }
     
     func markSurpriseAsOpened(_ surprise: Surprise) async throws {
         try await surpriseService.markAsOpened(surprise)
@@ -105,6 +133,7 @@ final class HomeViewModel: ObservableObject {
         relationshipService.listenToRelationship(relationshipId: relationshipId)
         specialDayService.listenToSpecialDays(relationshipId: relationshipId)
         messageServiceRef.listenToUnreadMessagesCount(relationshipId: relationshipId, currentUserId: userId)
+        moodService.listenToMoodStatuses(relationshipId: relationshipId)
     }
     
     private func observeServices() {
@@ -117,7 +146,8 @@ final class HomeViewModel: ObservableObject {
             planService.objectWillChange,
             surpriseService.objectWillChange,
             specialDayService.objectWillChange,
-            messageServiceRef.objectWillChange
+            messageServiceRef.objectWillChange,
+            moodService.objectWillChange
         ].forEach { publisher in
             publisher
                 .receive(on: RunLoop.main)

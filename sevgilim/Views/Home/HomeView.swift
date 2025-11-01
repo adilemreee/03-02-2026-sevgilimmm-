@@ -33,6 +33,7 @@ struct HomeView: View {
     @State private var navigateToSpecialDays = false
     @State private var showingNotifications = false
     @State private var navigateToSecretVault = false
+    @State private var isUpdatingMood = false
     
     let timer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
     
@@ -86,6 +87,25 @@ struct HomeView: View {
                                 theme: themeManager.currentTheme
                             )
                             
+                            MoodStatusWidget(
+                                theme: themeManager.currentTheme,
+                                currentUserName: currentUser.name,
+                                partnerName: currentUser.id.map { relationship.partnerName(for: $0) },
+                                currentMoodStatus: viewModel.currentMoodStatus,
+                                partnerMoodStatus: viewModel.partnerMoodStatus,
+                                isUpdating: isUpdatingMood,
+                                onMoodSelected: { mood in
+                                    guard !isUpdatingMood else { return }
+                                    isUpdatingMood = true
+                                    Task {
+                                        await viewModel.updateMood(to: mood)
+                                        await MainActor.run {
+                                            isUpdatingMood = false
+                                        }
+                                    }
+                                }
+                            )
+                            
                             // Quick Stats Grid
                             QuickStatsGrid(
                                 photosCount: viewModel.photosCount,
@@ -117,6 +137,8 @@ struct HomeView: View {
                                     plans: Array(viewModel.activePlans.prefix(3))
                                 )
                             }
+                            
+                      
                         }
                     }
                     .padding(.horizontal, 20)

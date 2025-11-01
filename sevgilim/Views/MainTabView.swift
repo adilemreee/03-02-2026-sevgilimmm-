@@ -21,6 +21,7 @@ struct MainTabView: View {
     @EnvironmentObject var storyService: StoryService
     @EnvironmentObject var messageService: MessageService
     @EnvironmentObject var secretVaultService: SecretVaultService
+    @EnvironmentObject var moodService: MoodService
     
     @State private var selectedTab = 0
     
@@ -36,7 +37,8 @@ struct MainTabView: View {
                     planService: planService,
                     surpriseService: surpriseService,
                     specialDayService: specialDayService,
-                    messageService: messageService
+                    messageService: messageService,
+                    moodService: moodService
                 )
             )
                 .tag(0)
