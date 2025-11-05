@@ -12,7 +12,6 @@ struct HomeView: View {
     // MARK: - Environment Objects
     @EnvironmentObject private var themeManager: ThemeManager
     @EnvironmentObject private var greetingService: GreetingService
-    @EnvironmentObject private var messageService: MessageService
     
     // MARK: - View Model
     @StateObject private var viewModel: HomeViewModel
@@ -225,7 +224,4 @@ struct HomeView: View {
             binding.wrappedValue = true
         }
     }
-    
-
-    
 }

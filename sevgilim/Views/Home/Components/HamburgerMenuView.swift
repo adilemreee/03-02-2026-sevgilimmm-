@@ -115,7 +115,7 @@ struct HamburgerMenuView: View {
                 
                 MinimalMenuButton(
                     icon: "lock.shield.fill",
-                    title: "Özelll",
+                    title: "Özel Kasa",
                     count: secretVaultService.items.count,
                     theme: themeManager.currentTheme,
                     action: onSecretVaultSelected
