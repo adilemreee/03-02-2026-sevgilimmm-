@@ -55,12 +55,15 @@ const normaliseTokens = (tokens = []) => {
   return Array.from(new Set(filtered));
 };
 
-const applyDefaultApns = (message = {}) => {
+const mergeApnsPayload = (message = {}, {badge} = {}) => {
   const apns = {...(message.apns || {})};
   const payload = {...(apns.payload || {})};
   const aps = {...(payload.aps || {})};
   if (typeof aps.sound !== "string" || !aps.sound.trim()) {
     aps.sound = "default";
+  }
+  if (typeof badge === "number") {
+    aps.badge = badge;
   }
   return {
     ...message,
@@ -72,6 +75,10 @@ const applyDefaultApns = (message = {}) => {
       },
     },
   };
+};
+
+const applyDefaultApns = (message = {}, options = {}) => {
+  return mergeApnsPayload(message, options);
 };
 
 const chunkArray = (items, chunkSize = 200) => {
@@ -97,6 +104,36 @@ const truncate = (value, max = 120) => {
     return trimmed;
   }
   return `${trimmed.substring(0, max - 3)}...`;
+};
+
+const countUnreadMessages = async ({relationshipId, senderId}) => {
+  if (!relationshipId || !senderId) {
+    return null;
+  }
+
+  try {
+    const snapshot = await firestore.collection("messages")
+        .where("relationshipId", "==", relationshipId)
+        .where("senderId", "==", senderId)
+        .where("isRead", "==", false)
+        .get();
+    return snapshot.size;
+  } catch (error) {
+    if (error?.code === 9 || error?.code === "failed-precondition") {
+      logger.warn("Missing index for unread message count query.", {
+        relationshipId,
+        senderId,
+        error: error.message,
+      });
+    } else {
+      logger.error("Failed to count unread messages.", {
+        relationshipId,
+        senderId,
+        error,
+      });
+    }
+    return null;
+  }
 };
 
 const loadUsers = async (userIds = []) => {
@@ -395,7 +432,7 @@ const pruneInvalidTokens = async (tokenOwners, failedTokens = []) => {
   }
 };
 
-const sendPushToUsers = async ({userIds = [], notification, data}) => {
+const sendPushToUsers = async ({userIds = [], notification, data, badge}) => {
   if (!notification || !notification.title || !notification.body) {
     throw new Error("Notification title and body are required.");
   }
@@ -414,7 +451,7 @@ const sendPushToUsers = async ({userIds = [], notification, data}) => {
         tokens,
         notification,
         data: cleanData,
-      }),
+      }, {badge}),
   );
 
   if (response.failureCount > 0) {
@@ -446,7 +483,7 @@ exports.sendPushNotification = functions.https.onRequest(async (req, res) => {
 
   try {
     const payload = ensureJson(req.body);
-    const {token, tokens, topic, title, body, data} = payload;
+    const {token, tokens, topic, title, body, data, badge} = payload;
 
     if (!title || !body) {
       return res.status(400).json({
@@ -471,7 +508,7 @@ exports.sendPushNotification = functions.https.onRequest(async (req, res) => {
             tokens: cleanTokens,
             notification,
             data: messageData,
-          }),
+          }, {badge}),
       );
 
       const invalidTokens = [];
@@ -513,7 +550,7 @@ exports.sendPushNotification = functions.https.onRequest(async (req, res) => {
               token: cleanToken,
               notification,
               data: messageData,
-            }),
+            }, {badge}),
         );
       } catch (sendError) {
         if (isInvalidTokenError(sendError)) {
@@ -1228,6 +1265,13 @@ exports.onMessageCreated = functions.firestore
         `${preview.substring(0, 117)}...` :
         preview;
       const senderName = message.senderName || "Partnerin";
+      const unreadCount = await countUnreadMessages({
+        relationshipId: message.relationshipId,
+        senderId: message.senderId,
+      });
+      const badgeCount = typeof unreadCount === "number" && unreadCount > 0 ?
+        unreadCount :
+        1;
 
       return sendPushToUsers({
         userIds: [partnerId],
@@ -1240,7 +1284,9 @@ exports.onMessageCreated = functions.firestore
           messageId: context.params.messageId,
           relationshipId: message.relationshipId,
           senderId: message.senderId,
+          unreadCount: String(badgeCount),
         },
+        badge: badgeCount,
       });
     });
 

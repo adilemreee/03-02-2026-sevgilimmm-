@@ -178,6 +178,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     
     /// Rozet değerini güncelleyen metod. userInfo içinde aps.badge varsa onu kullanır; yoksa +1 artırır.
     private func updateBadge(using userInfo: [AnyHashable: Any]) {
+        guard shouldUpdateBadge(for: userInfo) else { return }
         let updateBlock = {
             // Eğer bildirim payload’ı içinde “aps.badge” varsa onu kullan
             if let aps = userInfo["aps"] as? [String: Any],
@@ -208,6 +209,30 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
                 updateBlock()
             }
         }
+    }
+    
+    private func shouldUpdateBadge(for userInfo: [AnyHashable: Any]) -> Bool {
+        guard let type = notificationType(from: userInfo)?.lowercased() else {
+            return false
+        }
+        return type == "message_new"
+    }
+    
+    private func notificationType(from userInfo: [AnyHashable: Any]) -> String? {
+        if let type = userInfo["type"] as? String {
+            return type
+        }
+        if let data = userInfo["data"] as? [String: Any],
+           let type = data["type"] as? String {
+            return type
+        }
+        if let type = userInfo["gcm.notification.type"] as? String {
+            return type
+        }
+        if let type = userInfo["gcm.message_type"] as? String {
+            return type
+        }
+        return nil
     }
     
     /// Rozet ve bildirimleri sıfırlar.

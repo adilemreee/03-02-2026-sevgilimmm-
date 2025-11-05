@@ -4,6 +4,8 @@
 //
 
 import SwiftUI
+import UIKit
+import UserNotifications
 import PhotosUI
 import UIKit
 
@@ -546,6 +548,7 @@ struct ChatView: View {
         let cleared = clearedDate
         
         Task {
+            var markedAnyMessage = false
             for message in messageService.messages {
                 guard !message.isRead,
                       message.senderId != currentUserId,
@@ -554,6 +557,22 @@ struct ChatView: View {
                       let messageId = message.id else { continue }
                 
                 try? await messageService.markAsRead(messageId: messageId)
+                markedAnyMessage = true
+            }
+            
+            if markedAnyMessage {
+                await MainActor.run {
+                    UserDefaults.standard.set(0, forKey: "badgeCount")
+                    if #available(iOS 17.0, *) {
+                        UNUserNotificationCenter.current().setBadgeCount(0) { error in
+                            if let error = error {
+                                print("Rozet sıfırlama hatası (chat): \(error.localizedDescription)")
+                            }
+                        }
+                    } else {
+                        UIApplication.shared.applicationIconBadgeNumber = 0
+                    }
+                }
             }
         }
     }
