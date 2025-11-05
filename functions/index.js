@@ -182,6 +182,32 @@ const getRelationshipUserIds = (relationship) => {
   return Array.from(new Set(ids));
 };
 
+const moodDetails = {
+  happy: {title: "Mutlu", emoji: "😊"},
+  missing: {title: "Özledim", emoji: "🥺"},
+  sad: {title: "Üzgün", emoji: "😔"},
+  excited: {title: "Heyecanlı", emoji: "🤩"},
+  tired: {title: "Yorgun", emoji: "🥱"},
+  love: {title: "Aşık", emoji: "😍"},
+};
+
+const describeMood = (value) => {
+  if (!value || typeof value !== "string") {
+    return {title: null, emoji: ""};
+  }
+  const clean = value.trim();
+  if (!clean.length) {
+    return {title: null, emoji: ""};
+  }
+  const details = moodDetails[clean];
+  if (details) {
+    return details;
+  }
+  const formatted = clean.replace(/[_-]+/g, " ");
+  const title = formatted.charAt(0).toUpperCase() + formatted.slice(1);
+  return {title, emoji: ""};
+};
+
 const toDate = (value) => {
   if (!value) {
     return null;
@@ -573,6 +599,115 @@ exports.onMemoryCreated = functions.firestore
           memoryId: context.params.memoryId,
           relationshipId: memory.relationshipId,
           createdBy: memory.createdBy,
+        },
+      });
+    });
+
+exports.onMemoryCommented = functions.firestore
+    .document("memories/{memoryId}")
+    .onUpdate(async (change, context) => {
+      const beforeData = change.before.exists ? change.before.data() : {};
+      const afterData = change.after.exists ? change.after.data() : null;
+
+      if (!afterData?.relationshipId) {
+        return null;
+      }
+
+      const beforeComments = Array.isArray(beforeData?.comments) ?
+        beforeData.comments :
+        [];
+      const afterComments = Array.isArray(afterData?.comments) ?
+        afterData.comments :
+        [];
+
+      if (afterComments.length <= beforeComments.length) {
+        return null;
+      }
+
+      const beforeIds = new Set(
+          beforeComments
+              .map((comment) => {
+                return typeof comment?.id === "string" ? comment.id : null;
+              })
+              .filter(Boolean),
+      );
+
+      let newComment = afterComments.find((comment) => {
+        if (!comment || typeof comment !== "object") {
+          return false;
+        }
+        if (typeof comment.id === "string" && comment.id) {
+          return !beforeIds.has(comment.id);
+        }
+        return false;
+      });
+
+      if (!newComment && afterComments.length) {
+        const newEntries = afterComments.slice(beforeComments.length);
+        newComment = newEntries.length ?
+          newEntries[newEntries.length - 1] :
+          afterComments[afterComments.length - 1];
+      }
+
+      if (!newComment || typeof newComment !== "object") {
+        return null;
+      }
+
+      const commenterId = typeof newComment.userId === "string" ?
+        newComment.userId.trim() :
+        "";
+      if (!commenterId) {
+        return null;
+      }
+
+      const relationship = await fetchRelationship(afterData.relationshipId);
+      if (!relationship) {
+        return null;
+      }
+
+      const recipients = getRelationshipUserIds(relationship)
+          .filter((id) => id && id !== commenterId);
+      if (!recipients.length) {
+        return null;
+      }
+
+      const users = await loadUsers([commenterId]);
+      const commenter = users.get(commenterId);
+      const fallbackName = typeof newComment.userName === "string" ?
+        newComment.userName.trim() :
+        null;
+      const commenterName = commenter?.name || fallbackName || "Partnerin";
+
+      const memoryTitleRaw = typeof afterData.title === "string" ?
+        afterData.title.trim() :
+        "";
+      const memoryTitle = memoryTitleRaw.length ? memoryTitleRaw : null;
+      const commentTextRaw = typeof newComment.text === "string" ?
+        newComment.text.trim() :
+        "";
+      const commentPreview = truncate(commentTextRaw, 140);
+      const body =
+          buildNotificationBody([
+            memoryTitle,
+            commentPreview,
+          ]) || commentPreview || memoryTitle || "Anına yeni bir yorum var.";
+
+      const commentId = typeof newComment.id === "string" ?
+        newComment.id :
+        undefined;
+
+      return sendPushToUsers({
+        userIds: recipients,
+        notification: {
+          title: `${commenterName} anına yorum yaptı`,
+          body,
+        },
+        data: {
+          type: "memory_comment",
+          memoryId: context.params.memoryId,
+          relationshipId: afterData.relationshipId,
+          commentedBy: commenterId,
+          commentId,
         },
       });
     });
@@ -996,6 +1131,71 @@ exports.onStoryLike = functions.firestore
           storyId: context.params.storyId,
           likedBy: newLikes[0],
           relationshipId: afterData.relationshipId,
+        },
+      });
+    });
+
+exports.onMoodStatusChanged = functions.firestore
+    .document("moodStatuses/{statusId}")
+    .onWrite(async (change, context) => {
+      const beforeData = change.before.exists ? change.before.data() : null;
+      const afterData = change.after.exists ? change.after.data() : null;
+
+      if (!afterData) {
+        return null;
+      }
+
+      const afterMood = afterData.mood;
+      if (!afterMood) {
+        return null;
+      }
+
+      const beforeMood = beforeData?.mood;
+      if (beforeMood === afterMood) {
+        return null;
+      }
+
+      const relationshipId = afterData.relationshipId;
+      const userId = afterData.userId;
+      if (!relationshipId || !userId) {
+        return null;
+      }
+
+      const relationship = await fetchRelationship(relationshipId);
+      if (!relationship) {
+        return null;
+      }
+
+      const recipients = getRelationshipUserIds(relationship)
+          .filter((id) => id && id !== userId);
+      if (!recipients.length) {
+        return null;
+      }
+
+      const users = await loadUsers([userId]);
+      const updatedUser = users.get(userId);
+      const updaterName = updatedUser?.name || "Partnerin";
+
+      const moodInfo = describeMood(afterMood);
+      const emojiSuffix = moodInfo.emoji ? ` ${moodInfo.emoji}` : "";
+      const body = moodInfo.title ?
+        `Yeni mod: ${moodInfo.title}${emojiSuffix}` :
+        "Partnerinin ruh halini gör.";
+
+      return sendPushToUsers({
+        userIds: recipients,
+        notification: {
+          title: `${updaterName} ruh halini güncelledi${emojiSuffix}`,
+          body,
+        },
+        data: {
+          type: "mood_update",
+          statusId: context.params.statusId,
+          relationshipId,
+          updatedBy: userId,
+          mood: afterMood,
+          moodTitle: moodInfo.title || "",
+          moodEmoji: moodInfo.emoji || "",
         },
       });
     });
