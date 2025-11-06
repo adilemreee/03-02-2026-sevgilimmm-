@@ -210,6 +210,9 @@ struct ChatView: View {
                 .padding(.vertical, 20)
             }
             .background(Color.clear)
+            .onTapGesture {
+                isTextFieldFocused = false
+            }
             .onAppear {
                 scrollProxy = proxy
                 markUnreadMessagesAsRead()
@@ -476,7 +479,6 @@ struct ChatView: View {
         }
         
         messageText = ""
-        isTextFieldFocused = false
         
         Task {
             do {
