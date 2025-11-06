@@ -30,6 +30,7 @@ struct ChatView: View {
     @State private var showingClearConfirmation = false
     @State private var isPerformingAction = false
     @State private var scrollProxy: ScrollViewProxy?
+    @State private var hasStartedListeners = false
     
     private let reactionOptions = ["❤️", "😂", "😍", "👍", "👏", "😢"]
     
@@ -79,6 +80,14 @@ struct ChatView: View {
             .navigationBarTitleDisplayMode(.inline)
             .onAppear(perform: setupView)
             .onDisappear(perform: cleanupView)
+            .onChange(of: authService.currentUser?.id) { _ in
+                hasStartedListeners = false
+                setupView()
+            }
+            .onChange(of: relationshipService.currentRelationship?.id) { _ in
+                hasStartedListeners = false
+                setupView()
+            }
             .photosPicker(
                 isPresented: $showImagePicker,
                 selection: $selectedImage,
@@ -402,6 +411,7 @@ struct ChatView: View {
     }
     
     private func setupView() {
+        guard !hasStartedListeners else { return }
         guard let relationshipId = relationshipService.currentRelationship?.id,
               let userId = authService.currentUser?.id else {
             return
@@ -410,9 +420,12 @@ struct ChatView: View {
         messageService.listenToMessages(relationshipId: relationshipId, currentUserId: userId)
         messageService.listenToTypingIndicator(relationshipId: relationshipId, currentUserId: userId)
         markUnreadMessagesAsRead()
+        hasStartedListeners = true
     }
     
     private func cleanupView() {
+        defer { hasStartedListeners = false }
+        
         guard let relationshipId = relationshipService.currentRelationship?.id,
               let userId = authService.currentUser?.id,
               let userName = authService.currentUser?.name else {

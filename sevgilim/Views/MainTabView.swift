@@ -22,6 +22,7 @@ struct MainTabView: View {
     @EnvironmentObject var messageService: MessageService
     @EnvironmentObject var secretVaultService: SecretVaultService
     @EnvironmentObject var moodService: MoodService
+    @EnvironmentObject var navigationRouter: AppNavigationRouter
     
     @State private var selectedTab = 0
     
@@ -99,6 +100,75 @@ struct MainTabView: View {
                 
                 print("🎬 Tüm servisler başlatıldı - Story listener aktif")
             }
+            
+            if navigationRouter.chatTrigger > 0 {
+                selectedTab = 0
+            }
+            
+            if navigationRouter.surprisesTrigger > 0 {
+                selectedTab = 0
+            }
+            
+            if navigationRouter.specialDaysTrigger > 0 {
+                selectedTab = 0
+            }
+            if navigationRouter.moviesTrigger > 0 {
+                selectedTab = 0
+            }
+            if navigationRouter.plansTrigger > 0 {
+                selectedTab = 0
+            }
+            if navigationRouter.songsTrigger > 0 {
+                selectedTab = 0
+            }
+            if navigationRouter.placesTrigger > 0 {
+                selectedTab = 0
+            }
+            if navigationRouter.secretVaultTrigger > 0 {
+                selectedTab = 0
+            }
+            if navigationRouter.photosTrigger > 0 {
+                selectedTab = 2
+            }
+            if navigationRouter.notesTrigger > 0 {
+                selectedTab = 3
+            }
+            if navigationRouter.memoriesTrigger > 0 {
+                selectedTab = 1
+            }
+        }
+        .onChange(of: navigationRouter.chatTrigger) { _ in
+            selectedTab = 0
+        }
+        .onChange(of: navigationRouter.surprisesTrigger) { _ in
+            selectedTab = 0
+        }
+        .onChange(of: navigationRouter.specialDaysTrigger) { _ in
+            selectedTab = 0
+        }
+        .onChange(of: navigationRouter.moviesTrigger) { _ in
+            selectedTab = 0
+        }
+        .onChange(of: navigationRouter.plansTrigger) { _ in
+            selectedTab = 0
+        }
+        .onChange(of: navigationRouter.songsTrigger) { _ in
+            selectedTab = 0
+        }
+        .onChange(of: navigationRouter.placesTrigger) { _ in
+            selectedTab = 0
+        }
+        .onChange(of: navigationRouter.secretVaultTrigger) { _ in
+            selectedTab = 0
+        }
+        .onChange(of: navigationRouter.photosTrigger) { _ in
+            selectedTab = 2
+        }
+        .onChange(of: navigationRouter.notesTrigger) { _ in
+            selectedTab = 3
+        }
+        .onChange(of: navigationRouter.memoriesTrigger) { _ in
+            selectedTab = 1
         }
     }
 }

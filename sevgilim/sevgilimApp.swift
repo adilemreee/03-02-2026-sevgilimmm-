@@ -31,7 +31,7 @@ struct sevgilimApp: App {
     @StateObject private var greetingService = GreetingService()
     @StateObject private var secretVaultService = SecretVaultService()
     @StateObject private var moodService = MoodService()
-    
+    @StateObject private var navigationRouter = AppNavigationRouter()
  
     
     var body: some Scene {
@@ -55,14 +55,28 @@ struct sevgilimApp: App {
                 .environmentObject(themeManager)
                 .environmentObject(greetingService)
                 .environmentObject(secretVaultService)
-                
-                
+                .environmentObject(navigationRouter)
+                .onAppear {
+                    appDelegate.navigationRouter = navigationRouter
+                }
         }
     }
 }
 
 // MARK: - App Delegate
 class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate, MessagingDelegate {
+    weak var navigationRouter: AppNavigationRouter? {
+        didSet {
+            guard let router = navigationRouter else { return }
+            pendingNavigationActions.forEach { action in
+                action(router)
+            }
+            pendingNavigationActions.removeAll()
+        }
+    }
+    
+    private var pendingNavigationActions: [(AppNavigationRouter) -> Void] = []
+    
     /// Rozet sayısını saklamak için kullanılacak UserDefaults anahtarı
     private let badgeKey = "badgeCount"
     
@@ -91,6 +105,10 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         
         // Firebase’e ait token senkronizasyonu yapılacaksa
         PushNotificationManager.shared.refreshIfNeeded()
+        
+        if let remoteNotification = launchOptions?[.remoteNotification] as? [AnyHashable: Any] {
+            routeNotificationIfNeeded(userInfo: remoteNotification)
+        }
         
         return true
     }
@@ -155,6 +173,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
             object: nil,
             userInfo: response.notification.request.content.userInfo
         )
+        routeNotificationIfNeeded(userInfo: response.notification.request.content.userInfo)
         
         completionHandler()
     }
@@ -234,6 +253,44 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
             return type
         }
         return nil
+    }
+    
+    private func routeNotificationIfNeeded(userInfo: [AnyHashable: Any]) {
+        guard let type = notificationType(from: userInfo)?.lowercased() else { return }
+        switch type {
+        case "message_new":
+            enqueueNavigation { $0.openChat() }
+        case "surprise_new":
+            enqueueNavigation { $0.openSurprises() }
+        case "special_day_upcoming":
+            enqueueNavigation { $0.openSpecialDays() }
+        case "plan_reminder":
+            enqueueNavigation { $0.openPlans() }
+        case "movie_night":
+            enqueueNavigation { $0.openMovies() }
+        case "note_shared":
+            enqueueNavigation { $0.openNotes() }
+        case "photo_added":
+            enqueueNavigation { $0.openPhotos() }
+        case "song_shared":
+            enqueueNavigation { $0.openSongs() }
+        case "place_recommendation":
+            enqueueNavigation { $0.openPlaces() }
+        case "secret_vault_alert":
+            enqueueNavigation { $0.openSecretVault() }
+        case "memory_new":
+            enqueueNavigation { $0.openMemories() }
+        default:
+            break
+        }
+    }
+    
+    private func enqueueNavigation(_ action: @escaping (AppNavigationRouter) -> Void) {
+        if let router = navigationRouter {
+            action(router)
+        } else {
+            pendingNavigationActions.append(action)
+        }
     }
     
     /// Rozet ve bildirimleri sıfırlar.
