@@ -171,4 +171,20 @@ class AuthenticationService: ObservableObject {
         
         fetchUserData(userId: userId)
     }
+    
+    func deleteAccount() async throws {
+        guard let userId = currentUser?.id,
+              let user = Auth.auth().currentUser else { return }
+        
+        // 1. Delete user data from Firestore
+        try await db.collection("users").document(userId).delete()
+        
+        // 2. Delete user from Firebase Auth
+        try await user.delete()
+        
+        await MainActor.run {
+            self.currentUser = nil
+            self.isAuthenticated = false
+        }
+    }
 }

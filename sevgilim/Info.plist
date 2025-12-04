@@ -2,6 +2,20 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>CFBundleDisplayName</key>
+	<string>Sevgilim</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Anılarınızı kaydetmek ve paylaşmak için kameranıza erişim izni gerekiyor.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Konumunuzu paylaşarak birlikte olduğunuz yerleri haritada görebilmeniz için konum izni gerekiyor.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Videolarınızda ses kaydı yapabilmek için mikrofon izni gerekiyor.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Galerinizden fotoğraf ve video seçip paylaşabilmeniz için galeri erişim izni gerekiyor.</string>
 	<key>SpotifyClientID</key>
 	<string>ebb22c9c8dd9465b95c93902edb083c6</string>
 	<key>SpotifyClientSecret</key>
@@ -10,5 +24,12 @@
 	<array>
 		<string>remote-notification</string>
 	</array>
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UIColorName</key>
+		<string>AccentColor</string>
+		<key>UIImageName</key>
+		<string>LaunchImage</string>
+	</dict>
 </dict>
 </plist>
