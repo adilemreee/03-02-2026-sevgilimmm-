@@ -328,11 +328,9 @@ struct SurpriseCardView: View {
                         if let cachedImage = cachedImage {
                             Image(uiImage: cachedImage)
                                 .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 180)
+                                .aspectRatio(contentMode: .fit)
+                                .frame(maxWidth: .infinity, maxHeight: 200)
                                 .cornerRadius(12)
-                                .clipped()
                         } else if isLoadingImage {
                             ZStack {
                                 Rectangle()
