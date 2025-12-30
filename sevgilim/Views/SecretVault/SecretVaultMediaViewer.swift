@@ -13,10 +13,15 @@ struct SecretVaultMediaViewer: View {
     let onClose: () -> Void
     
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var secretVaultService: SecretVaultService
     
     @State private var pageIndex: Int
     @State private var showControls = true
     @State private var hasDismissed = false
+    @State private var showShareSheet = false
+    @State private var showDeleteAlert = false
+    @State private var shareItems: [Any]?
+    @State private var isPreparingShare = false
     
     init(items: Binding<[SecretVaultItem]>, currentIndex: Binding<Int>, onClose: @escaping () -> Void) {
         _items = items
@@ -54,6 +59,27 @@ struct SecretVaultMediaViewer: View {
             }
         }
         .statusBar(hidden: itemsCount > 0 ? !showControls : false)
+        .sheet(isPresented: Binding(
+            get: { showShareSheet && shareItems != nil },
+            set: { newValue in
+                if !newValue {
+                    showShareSheet = false
+                    shareItems = nil
+                }
+            }
+        )) {
+            if let items = shareItems {
+                ShareSheet(items: items)
+            }
+        }
+        .alert("Medyayı Sil", isPresented: $showDeleteAlert) {
+            Button("İptal", role: .cancel) {}
+            Button("Sil", role: .destructive) {
+                deleteCurrentItem()
+            }
+        } message: {
+            Text("Bu medyayı silmek istediğinizden emin misiniz?")
+        }
         .onAppear {
             syncPageIndex()
             if itemsCount == 0 {
@@ -134,7 +160,21 @@ struct SecretVaultMediaViewer: View {
                             )
                     }
                     Spacer()
-                    infoCapsule
+                    VStack(alignment: .trailing, spacing: 10) {
+                        infoCapsule
+                        HStack(spacing: 10) {
+                            // Share button
+                            actionButton(systemImage: isPreparingShare ? "ellipsis" : "square.and.arrow.up") {
+                                shareCurrentItem()
+                            }
+                            .disabled(isPreparingShare)
+                            
+                            // Delete button
+                            actionButton(systemImage: "trash", color: .red) {
+                                showDeleteAlert = true
+                            }
+                        }
+                    }
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 20)
@@ -151,27 +191,64 @@ struct SecretVaultMediaViewer: View {
         .animation(.easeInOut(duration: 0.2), value: showControls)
     }
     
+    private func actionButton(systemImage: String, color: Color = .white, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Circle()
+                .fill(.ultraThinMaterial)
+                .frame(width: 40, height: 40)
+                .overlay(
+                    Image(systemName: systemImage)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(color)
+                )
+        }
+    }
+    
     @ViewBuilder
     private var infoCapsule: some View {
         if let item = currentItem {
-            VStack(alignment: .trailing, spacing: 8) {
-                HStack(spacing: 6) {
-                    Image(systemName: item.isVideo ? "video.fill" : "photo.fill")
-                    Text(item.isVideo ? "Video" : "Fotoğraf")
-                }
-                if let size = item.formattedSize {
-                    Text(size)
-                }
-                if itemsCount > 1 {
-                    Text("\(clampedPageIndex + 1) / \(itemsCount)")
-                }
+            HStack(spacing: 6) {
+                // Video/Photo icon
+                Image(systemName: item.isVideo ? "video.fill" : "photo.fill")
+                    .font(.caption2)
+                
+                // Metadata in one line with separators
+                Text(buildMetadataString(for: item))
             }
             .font(.caption.bold())
             .foregroundColor(.white)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(Color.white.opacity(0.18), in: Capsule())
+            .background(.ultraThinMaterial, in: Capsule())
         }
+    }
+    
+    private func buildMetadataString(for item: SecretVaultItem) -> String {
+        var parts: [String] = []
+        
+        // Duration for videos
+        if item.isVideo, let duration = item.duration {
+            parts.append(videoDurationText(from: duration))
+        }
+        
+        // File size
+        if let size = item.formattedSize {
+            parts.append(size)
+        }
+        
+        // Page indicator
+        if itemsCount > 1 {
+            parts.append("\(clampedPageIndex + 1)/\(itemsCount)")
+        }
+        
+        return parts.joined(separator: " • ")
+    }
+    
+    private func videoDurationText(from duration: Double) -> String {
+        let totalSeconds = Int(duration.rounded())
+        let minutes = totalSeconds / 60
+        let seconds = totalSeconds % 60
+        return String(format: "%d:%02d", minutes, seconds)
     }
     
     @ViewBuilder
@@ -211,6 +288,69 @@ struct SecretVaultMediaViewer: View {
         }
         if currentIndex != clamped {
             currentIndex = clamped
+        }
+    }
+    
+    // MARK: - Share
+    
+    private func shareCurrentItem() {
+        guard let item = currentItem else { return }
+        isPreparingShare = true
+        
+        Task {
+            do {
+                if item.isVideo {
+                    // Video için cache'den veya doğrudan URL'den indir
+                    let localURL = try await VideoCacheService.shared.cachedURL(for: item.downloadURL)
+                    await MainActor.run {
+                        isPreparingShare = false
+                        shareItems = [localURL]
+                        showShareSheet = true
+                    }
+                } else {
+                    // Fotoğraf için indir
+                    if let url = URL(string: item.downloadURL) {
+                        let (data, _) = try await URLSession.shared.data(from: url)
+                        if let image = UIImage(data: data) {
+                            await MainActor.run {
+                                isPreparingShare = false
+                                shareItems = [image]
+                                showShareSheet = true
+                            }
+                        } else {
+                            throw NSError(domain: "SecretVault", code: -1, userInfo: [NSLocalizedDescriptionKey: "Görsel okunamadı"])
+                        }
+                    }
+                }
+            } catch {
+                print("❌ SecretVault Share error: \(error.localizedDescription)")
+                await MainActor.run {
+                    isPreparingShare = false
+                }
+            }
+        }
+    }
+    
+    // MARK: - Delete
+    
+    private func deleteCurrentItem() {
+        guard let item = currentItem else { return }
+        Task {
+            do {
+                try await secretVaultService.delete(item)
+                await MainActor.run {
+                    // items binding'i otomatik güncellenecek
+                    if itemsCount == 0 {
+                        closeViewer()
+                    } else {
+                        let newIndex = max(0, min(pageIndex, itemsCount - 1))
+                        pageIndex = newIndex
+                        currentIndex = newIndex
+                    }
+                }
+            } catch {
+                print("❌ SecretVault Delete error: \(error.localizedDescription)")
+            }
         }
     }
 }
@@ -376,67 +516,247 @@ private struct SecretVaultPhotoViewerContent: View {
     }
 }
 
+// MARK: - Video Viewer with Native Controls
+
 private struct SecretVaultVideoViewerContent: View {
     let item: SecretVaultItem
     let isActive: Bool
     let onTap: () -> Void
     
     @State private var player: AVPlayer?
-    @State private var loadedURL: URL?
+    @State private var isLoading = true
+    @State private var showPlaceholder = true
+    @State private var loadError: Error?
+    @State private var timeObserver: Any?
+    @State private var endObserver: NSObjectProtocol?
+    @State private var hasStarted = false
+    @State private var hasPrepared = false
+    @State private var loadedURL: String?
     
     var body: some View {
         GeometryReader { geometry in
             ZStack {
                 Color.black.ignoresSafeArea()
                 
-                if let url = URL(string: item.downloadURL) {
-                    VideoPlayer(player: player)
+                // Placeholder thumbnail
+                if showPlaceholder {
+                    if let thumbnailURL = item.thumbnailURL {
+                        CachedAsyncImage(url: thumbnailURL, thumbnail: false) { image, _ in
+                            image
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: geometry.size.width, height: geometry.size.height)
+                        } placeholder: {
+                            Color.black.opacity(0.2)
+                        }
+                    } else {
+                        // Thumbnail yoksa siyah arka plan
+                        Color.black
+                    }
+                }
+                
+                // Video player with native controls
+                if let player = player, loadError == nil {
+                    SecretVaultVideoPlayerController(player: player)
                         .frame(width: geometry.size.width, height: geometry.size.height)
-                        .background(Color.black)
-                        .ignoresSafeArea()
-                        .onAppear {
-                            configurePlayer(with: url)
-                            if isActive {
-                                player?.play()
+                        .opacity(showPlaceholder ? 0 : 1)
+                        .contentShape(Rectangle())
+                        .simultaneousGesture(
+                            TapGesture().onEnded {
+                                onTap()
                             }
-                        }
-                        .onChange(of: isActive) { _, newValue in
-                            if newValue {
-                                player?.play()
-                            } else {
-                                player?.pause()
-                            }
-                        }
-                        .onDisappear {
-                            player?.pause()
-                        }
-                        .overlay(
-                            Color.black.opacity(0.001)
-                                .contentShape(Rectangle())
-                                .onTapGesture {
-                                    onTap()
-                                }
                         )
-                } else {
-                    VStack(spacing: 14) {
+                }
+                
+                // Loading indicator
+                if isLoading && loadError == nil {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        .scaleEffect(1.8)
+                }
+                
+                // Error state with retry button
+                if let error = loadError {
+                    VStack(spacing: 16) {
                         Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 56))
+                            .font(.system(size: 60))
                             .foregroundColor(.yellow)
                         Text("Video yüklenemedi")
                             .font(.headline)
                             .foregroundColor(.white)
+                        Text(error.localizedDescription)
+                            .font(.caption)
+                            .foregroundColor(.white.opacity(0.7))
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
+                        
+                        Button {
+                            retryLoading()
+                        } label: {
+                            Label("Tekrar Dene", systemImage: "arrow.clockwise")
+                                .font(.subheadline.bold())
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 10)
+                                .background(Color.white.opacity(0.2))
+                                .clipShape(Capsule())
+                        }
                     }
-                    .padding()
+                }
+            }
+            .onAppear {
+                if isActive && !hasPrepared {
+                    prepareVideo()
+                }
+            }
+            .onChange(of: isActive) { _, newValue in
+                if newValue {
+                    if player == nil && !hasPrepared {
+                        prepareVideo()
+                    } else if let player = player {
+                        player.play()
+                    }
+                } else {
+                    player?.pause()
+                }
+            }
+            .onDisappear {
+                cleanup()
+            }
+        }
+    }
+    
+    private func retryLoading() {
+        cleanup()
+        hasPrepared = false
+        loadError = nil
+        prepareVideo()
+    }
+    
+    private func prepareVideo() {
+        // Zaten hazırlanıyorsa veya aynı URL için hazırlanmışsa tekrar hazırlama
+        guard !hasPrepared || loadedURL != item.downloadURL else {
+            if let player = player {
+                player.play()
+            }
+            return
+        }
+        
+        hasPrepared = true
+        loadedURL = item.downloadURL
+        isLoading = true
+        loadError = nil
+        
+        Task {
+            do {
+                // Video'yu cache'le ve local URL al
+                let localURL = try await VideoCacheService.shared.cachedURL(for: item.downloadURL)
+                
+                // URL'nin geçerli olduğunu kontrol et
+                guard FileManager.default.fileExists(atPath: localURL.path) else {
+                    throw NSError(domain: "SecretVault", code: -1, userInfo: [NSLocalizedDescriptionKey: "Video dosyası bulunamadı"])
+                }
+                
+                let asset = AVURLAsset(url: localURL)
+                
+                // Asset'in oynatılabilir olduğunu kontrol et
+                let isPlayable = try await asset.load(.isPlayable)
+                guard isPlayable else {
+                    throw NSError(domain: "SecretVault", code: -2, userInfo: [NSLocalizedDescriptionKey: "Video oynatılamıyor"])
+                }
+                
+                let playerItem = AVPlayerItem(asset: asset)
+                let newPlayer = AVPlayer(playerItem: playerItem)
+                newPlayer.actionAtItemEnd = .pause
+                newPlayer.automaticallyWaitsToMinimizeStalling = false
+                
+                await MainActor.run {
+                    // Eski player'ı temizle
+                    cleanupPlayer()
+                    
+                    self.player = newPlayer
+                    self.addObservers(to: newPlayer)
+                    self.isLoading = false
+                    
+                    if isActive {
+                        newPlayer.play()
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    self.loadError = error
+                    self.isLoading = false
+                    self.hasPrepared = false // Tekrar denenebilsin
+                    print("❌ SecretVault Video Error: \(error.localizedDescription)")
                 }
             }
         }
     }
     
-    private func configurePlayer(with url: URL) {
-        guard loadedURL != url else { return }
-        loadedURL = url
-        let player = AVPlayer(url: url)
-        player.actionAtItemEnd = .pause
-        self.player = player
+    private func addObservers(to player: AVPlayer) {
+        let interval = CMTime(seconds: 0.1, preferredTimescale: 600)
+        timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [self] time in
+            let elapsed = CMTimeGetSeconds(time)
+            if elapsed.isFinite, elapsed > 0.1, !hasStarted {
+                hasStarted = true
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showPlaceholder = false
+                }
+            }
+        }
+        
+        endObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: player.currentItem,
+            queue: .main
+        ) { _ in
+            // Loop video
+            player.seek(to: .zero)
+            player.play()
+        }
+    }
+    
+    private func cleanupPlayer() {
+        if let observer = timeObserver, let player = player {
+            player.removeTimeObserver(observer)
+            timeObserver = nil
+        }
+        if let endObserver {
+            NotificationCenter.default.removeObserver(endObserver)
+            self.endObserver = nil
+        }
+        player?.pause()
+        player = nil
+    }
+    
+    private func cleanup() {
+        cleanupPlayer()
+        hasStarted = false
+        isLoading = false
+        showPlaceholder = true
+        hasPrepared = false
+        loadedURL = nil
+    }
+}
+
+// MARK: - Native Video Player Controller (AVPlayerViewController)
+
+private struct SecretVaultVideoPlayerController: UIViewControllerRepresentable {
+    let player: AVPlayer
+    
+    func makeUIViewController(context: Context) -> AVPlayerViewController {
+        let controller = AVPlayerViewController()
+        controller.player = player
+        controller.showsPlaybackControls = true  // Native kontroller açık
+        controller.exitsFullScreenWhenPlaybackEnds = false
+        controller.videoGravity = .resizeAspect
+        controller.view.backgroundColor = .black
+        return controller
+    }
+    
+    func updateUIViewController(_ uiViewController: AVPlayerViewController, context: Context) {
+        if uiViewController.player !== player {
+            uiViewController.player = player
+        }
     }
 }

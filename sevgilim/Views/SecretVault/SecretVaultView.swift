@@ -332,11 +332,17 @@ struct SecretVaultContentView: View {
 
 struct SecretVaultView: View {
     @EnvironmentObject private var themeManager: ThemeManager
+    @EnvironmentObject private var authService: AuthenticationService
+    @ObservedObject private var pinManager = SecretVaultPINManager.shared
     
     @State private var stage: AccessStage = .loading
     @State private var errorMessage: String?
+    @State private var isProcessing: Bool = false
+    @State private var hasInitialized: Bool = false
     
-    private let pinManager = SecretVaultPINManager.shared
+    private var relationshipId: String? {
+        authService.currentUser?.relationshipId
+    }
     
     var body: some View {
         Group {
@@ -345,10 +351,15 @@ struct SecretVaultView: View {
                 SecretVaultContentView()
             case .loading:
                 lockedBackground {
-                    ProgressView()
-                        .progressViewStyle(.circular)
-                        .tint(.white)
-                        .scaleEffect(1.1)
+                    VStack(spacing: 16) {
+                        ProgressView()
+                            .progressViewStyle(.circular)
+                            .tint(.white)
+                            .scaleEffect(1.1)
+                        Text("Yükleniyor...")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                 }
             case .setup:
                 lockedBackground {
@@ -358,6 +369,7 @@ struct SecretVaultView: View {
                         errorMessage: errorMessage,
                         primaryColor: themeManager.currentTheme.primaryColor,
                         showBackButton: false,
+                        isProcessing: isProcessing,
                         onBack: nil,
                         onEditingChanged: { errorMessage = nil },
                         onSubmit: { pin in
@@ -375,6 +387,7 @@ struct SecretVaultView: View {
                         errorMessage: errorMessage,
                         primaryColor: themeManager.currentTheme.primaryColor,
                         showBackButton: true,
+                        isProcessing: isProcessing,
                         onBack: {
                             errorMessage = nil
                             stage = .setup
@@ -382,9 +395,24 @@ struct SecretVaultView: View {
                         onEditingChanged: { errorMessage = nil },
                         onSubmit: { pin in
                             if pin == original {
-                                pinManager.setPIN(pin)
-                                errorMessage = nil
-                                stage = .unlocked
+                                guard let relationshipId = relationshipId else {
+                                    errorMessage = "İlişki bulunamadı."
+                                    return false
+                                }
+                                
+                                isProcessing = true
+                                Task {
+                                    do {
+                                        try await pinManager.setPIN(pin, relationshipId: relationshipId)
+                                        isProcessing = false
+                                        errorMessage = nil
+                                        stage = .unlocked
+                                    } catch {
+                                        isProcessing = false
+                                        errorMessage = "PIN kaydedilemedi: \(error.localizedDescription)"
+                                        print("❌ PIN save error: \(error)")
+                                    }
+                                }
                                 return true
                             } else {
                                 errorMessage = "PIN'ler eşleşmedi. Tekrar deneyelim."
@@ -401,6 +429,8 @@ struct SecretVaultView: View {
                         errorMessage: errorMessage,
                         primaryColor: themeManager.currentTheme.primaryColor,
                         showBackButton: false,
+                        isProcessing: isProcessing,
+                        showChangePINButton: true,
                         onBack: nil,
                         onEditingChanged: {
                             if errorMessage != nil {
@@ -408,13 +438,60 @@ struct SecretVaultView: View {
                             }
                         },
                         onSubmit: { pin in
-                            if pinManager.validate(pin: pin) {
-                                errorMessage = nil
-                                stage = .unlocked
-                                return true
-                            } else {
-                                errorMessage = "PIN yanlış. Tekrar dene."
+                            guard let relationshipId = relationshipId else {
+                                errorMessage = "İlişki bulunamadı."
                                 return false
+                            }
+                            
+                            isProcessing = true
+                            Task {
+                                let isValid = await pinManager.validate(pin: pin, relationshipId: relationshipId)
+                                isProcessing = false
+                                if isValid {
+                                    errorMessage = nil
+                                    stage = .unlocked
+                                } else {
+                                    errorMessage = "PIN yanlış. Tekrar dene."
+                                }
+                            }
+                            return true
+                        },
+                        onChangePIN: {
+                            stage = .changePIN
+                        }
+                    )
+                }
+            case .changePIN:
+                lockedBackground {
+                    ChangePINView(
+                        errorMessage: errorMessage,
+                        primaryColor: themeManager.currentTheme.primaryColor,
+                        isProcessing: isProcessing,
+                        onBack: {
+                            errorMessage = nil
+                            stage = .enter
+                        },
+                        onSubmit: { oldPIN, newPIN in
+                            guard let relationshipId = relationshipId else {
+                                errorMessage = "İlişki bulunamadı."
+                                return
+                            }
+                            
+                            isProcessing = true
+                            Task {
+                                do {
+                                    let success = try await pinManager.changePIN(oldPIN: oldPIN, newPIN: newPIN, relationshipId: relationshipId)
+                                    isProcessing = false
+                                    if success {
+                                        errorMessage = nil
+                                        stage = .unlocked
+                                    } else {
+                                        errorMessage = "Eski PIN yanlış."
+                                    }
+                                } catch {
+                                    isProcessing = false
+                                    errorMessage = "PIN değiştirilemedi: \(error.localizedDescription)"
+                                }
                             }
                         }
                     )
@@ -422,11 +499,37 @@ struct SecretVaultView: View {
             }
         }
         .onAppear {
-            if stage == .loading {
-                stage = pinManager.hasPIN() ? .enter : .setup
-                errorMessage = nil
+            initializeIfNeeded()
+        }
+        .onChange(of: pinManager.isReady) { _, isReady in
+            if isReady && stage == .loading {
+                updateStageFromPINState()
             }
         }
+    }
+    
+    private func initializeIfNeeded() {
+        guard !hasInitialized else { return }
+        hasInitialized = true
+        
+        guard let relationshipId = relationshipId else {
+            print("❌ SecretVault: No relationship ID found")
+            return
+        }
+        
+        print("🔐 SecretVault: Initializing with relationship \(relationshipId)")
+        pinManager.listenToPIN(relationshipId: relationshipId)
+        
+        // If already ready (from previous session), update stage immediately
+        if pinManager.isReady {
+            updateStageFromPINState()
+        }
+    }
+    
+    private func updateStageFromPINState() {
+        print("🔐 SecretVault: Updating stage - hasPIN=\(pinManager.hasPIN), isReady=\(pinManager.isReady)")
+        stage = pinManager.hasPIN ? .enter : .setup
+        errorMessage = nil
     }
     
     @ViewBuilder
@@ -453,6 +556,7 @@ struct SecretVaultView: View {
         case setup
         case confirm(String)
         case enter
+        case changePIN
         case unlocked
     }
 }
@@ -463,9 +567,12 @@ private struct PINEntryView: View {
     let errorMessage: String?
     let primaryColor: Color
     let showBackButton: Bool
+    var isProcessing: Bool = false
+    var showChangePINButton: Bool = false
     let onBack: (() -> Void)?
     let onEditingChanged: (() -> Void)?
     let onSubmit: (String) -> Bool
+    var onChangePIN: (() -> Void)? = nil
     
     @State private var pin: String = ""
     @State private var animateError: Bool = false
@@ -487,13 +594,21 @@ private struct PINEntryView: View {
                     .multilineTextAlignment(.center)
             }
             
-            PINDotsRow(
-                filledCount: pin.count,
-                primaryColor: primaryColor,
-                animateError: animateError
-            )
-            .onTapGesture {
-                isTextFieldFocused = true
+            ZStack {
+                PINDotsRow(
+                    filledCount: pin.count,
+                    primaryColor: primaryColor,
+                    animateError: animateError
+                )
+                .onTapGesture {
+                    isTextFieldFocused = true
+                }
+                
+                if isProcessing {
+                    ProgressView()
+                        .progressViewStyle(.circular)
+                        .tint(primaryColor)
+                }
             }
             
             hiddenTextField
@@ -526,6 +641,17 @@ private struct PINEntryView: View {
                 }
             }
             
+            if showChangePINButton {
+                Button {
+                    provideSelectionFeedback()
+                    onChangePIN?()
+                } label: {
+                    Text("PIN'i Değiştir")
+                        .font(.subheadline)
+                        .foregroundColor(primaryColor)
+                }
+            }
+            
             Spacer()
             
             Text("Gizliliğimiz için PIN'i sadece ikimiz bilelim.")
@@ -534,6 +660,7 @@ private struct PINEntryView: View {
                 .multilineTextAlignment(.center)
         }
         .padding(.vertical, 40)
+        .disabled(isProcessing)
         .onAppear {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
                 isTextFieldFocused = true
@@ -590,6 +717,215 @@ private struct PINEntryView: View {
             }
             .frame(width: 0, height: 0)
             .opacity(0.01)
+    }
+    
+    private func triggerErrorFeedback() {
+        provideErrorFeedback()
+        withAnimation(.spring(response: 0.22, dampingFraction: 0.32, blendDuration: 0.2)) {
+            animateError = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            animateError = false
+        }
+    }
+    
+    private func provideErrorFeedback() {
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.error)
+    }
+    
+    private func provideSelectionFeedback() {
+        let generator = UIImpactFeedbackGenerator(style: .light)
+        generator.impactOccurred()
+    }
+}
+
+// MARK: - Change PIN View
+
+private struct ChangePINView: View {
+    let errorMessage: String?
+    let primaryColor: Color
+    let isProcessing: Bool
+    let onBack: () -> Void
+    let onSubmit: (String, String) -> Void
+    
+    private enum Step {
+        case oldPIN
+        case newPIN
+        case confirmNewPIN
+    }
+    
+    @State private var step: Step = .oldPIN
+    @State private var oldPIN: String = ""
+    @State private var newPIN: String = ""
+    @State private var currentPIN: String = ""
+    @State private var localError: String?
+    @State private var animateError: Bool = false
+    @State private var isResetting: Bool = false
+    @FocusState private var isTextFieldFocused: Bool
+    
+    private var title: String {
+        switch step {
+        case .oldPIN: return "Mevcut PIN'i Gir"
+        case .newPIN: return "Yeni PIN Belirle"
+        case .confirmNewPIN: return "Yeni PIN'i Onayla"
+        }
+    }
+    
+    private var subtitle: String {
+        switch step {
+        case .oldPIN: return "Önce şu anki 4 haneli PIN'i gir."
+        case .newPIN: return "Yeni 4 haneli PIN'ini belirle."
+        case .confirmNewPIN: return "Yeni PIN'i tekrar girerek doğrula."
+        }
+    }
+    
+    private var displayError: String? {
+        localError ?? errorMessage
+    }
+    
+    var body: some View {
+        VStack(spacing: 32) {
+            Spacer()
+            
+            VStack(spacing: 12) {
+                Text(title)
+                    .font(.title2.bold())
+                    .multilineTextAlignment(.center)
+                Text(subtitle)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            
+            ZStack {
+                PINDotsRow(
+                    filledCount: currentPIN.count,
+                    primaryColor: primaryColor,
+                    animateError: animateError
+                )
+                .onTapGesture {
+                    isTextFieldFocused = true
+                }
+                
+                if isProcessing {
+                    ProgressView()
+                        .progressViewStyle(.circular)
+                        .tint(primaryColor)
+                }
+            }
+            
+            hiddenTextField
+            
+            if let displayError, !displayError.isEmpty {
+                Text(displayError)
+                    .font(.footnote)
+                    .foregroundColor(.red)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
+            }
+            
+            Button {
+                provideSelectionFeedback()
+                if step == .oldPIN {
+                    onBack()
+                } else {
+                    currentPIN = ""
+                    localError = nil
+                    step = step == .confirmNewPIN ? .newPIN : .oldPIN
+                }
+            } label: {
+                Label("Geri", systemImage: "arrow.uturn.backward")
+                    .font(.subheadline.bold())
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 12)
+                    .background(primaryColor.opacity(0.16))
+                    .foregroundColor(primaryColor)
+                    .clipShape(Capsule())
+            }
+            
+            Spacer()
+            
+            Text("Gizliliğimiz için PIN'i sadece ikimiz bilelim.")
+                .font(.footnote)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding(.vertical, 40)
+        .disabled(isProcessing)
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                isTextFieldFocused = true
+            }
+        }
+    }
+    
+    private var hiddenTextField: some View {
+        TextField("", text: $currentPIN)
+            .keyboardType(.numberPad)
+            .textContentType(.oneTimeCode)
+            .focused($isTextFieldFocused)
+            .onChange(of: currentPIN) { newValue in
+                var sanitized = newValue.filter { $0.isNumber }
+                if sanitized.count > 4 {
+                    sanitized = String(sanitized.prefix(4))
+                }
+                
+                if sanitized != newValue {
+                    currentPIN = sanitized
+                    return
+                }
+                
+                if isResetting {
+                    if sanitized.isEmpty {
+                        isResetting = false
+                    }
+                    return
+                }
+                
+                localError = nil
+                
+                if sanitized.count == 4 {
+                    handleSubmit(sanitized)
+                }
+            }
+            .frame(width: 0, height: 0)
+            .opacity(0.01)
+    }
+    
+    private func handleSubmit(_ pin: String) {
+        provideSelectionFeedback()
+        
+        switch step {
+        case .oldPIN:
+            oldPIN = pin
+            currentPIN = ""
+            step = .newPIN
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                isTextFieldFocused = true
+            }
+            
+        case .newPIN:
+            newPIN = pin
+            currentPIN = ""
+            step = .confirmNewPIN
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                isTextFieldFocused = true
+            }
+            
+        case .confirmNewPIN:
+            if pin == newPIN {
+                onSubmit(oldPIN, newPIN)
+            } else {
+                triggerErrorFeedback()
+                localError = "PIN'ler eşleşmedi. Tekrar dene."
+                isResetting = true
+                currentPIN = ""
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    isTextFieldFocused = true
+                }
+            }
+        }
     }
     
     private func triggerErrorFeedback() {
