@@ -8,6 +8,7 @@ import Combine
 import FirebaseAuth
 import FirebaseFirestore
 
+@MainActor
 class AuthenticationService: ObservableObject {
     @Published var currentUser: User?
     @Published var isAuthenticated = false

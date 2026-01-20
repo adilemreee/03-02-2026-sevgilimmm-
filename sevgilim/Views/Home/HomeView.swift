@@ -205,56 +205,28 @@ struct HomeView: View {
                     .presentationDetents([.medium, .large])
                     .presentationDragIndicator(.visible)
             }
-            .onChange(of: navigationRouter.chatTrigger) { _ in
-                navigateToChat = true
-            }
-            .onChange(of: navigationRouter.surprisesTrigger) { _ in
-                navigateToSurprises = true
-            }
-            .onChange(of: navigationRouter.specialDaysTrigger) { _ in
-                navigateToSpecialDays = true
-            }
-            .onChange(of: navigationRouter.plansTrigger) { _ in
-                navigateToPlans = true
-            }
-            .onChange(of: navigationRouter.moviesTrigger) { _ in
-                navigateToMovies = true
-            }
-            .onChange(of: navigationRouter.songsTrigger) { _ in
-                navigateToSongs = true
-            }
-            .onChange(of: navigationRouter.placesTrigger) { _ in
-                navigateToPlaces = true
-            }
-            .onChange(of: navigationRouter.secretVaultTrigger) { _ in
-                navigateToSecretVault = true
-            }
-            .onAppear {
-                if navigationRouter.chatTrigger > 0 {
-                    navigateToChat = true
-                }
-                if navigationRouter.surprisesTrigger > 0 {
-                    navigateToSurprises = true
-                }
-                if navigationRouter.specialDaysTrigger > 0 {
-                    navigateToSpecialDays = true
-                }
-                if navigationRouter.plansTrigger > 0 {
-                    navigateToPlans = true
-                }
-                if navigationRouter.moviesTrigger > 0 {
-                    navigateToMovies = true
-                }
-                if navigationRouter.songsTrigger > 0 {
-                    navigateToSongs = true
-                }
-                if navigationRouter.placesTrigger > 0 {
-                    navigateToPlaces = true
-                }
-                if navigationRouter.secretVaultTrigger > 0 {
-                    navigateToSecretVault = true
-                }
-            }
+            .handleNavigationTriggers(
+                router: navigationRouter,
+                navigateToChat: $navigateToChat,
+                navigateToSurprises: $navigateToSurprises,
+                navigateToSpecialDays: $navigateToSpecialDays,
+                navigateToPlans: $navigateToPlans,
+                navigateToMovies: $navigateToMovies,
+                navigateToSongs: $navigateToSongs,
+                navigateToPlaces: $navigateToPlaces,
+                navigateToSecretVault: $navigateToSecretVault
+            )
+            .checkNavigationTriggersOnAppear(
+                router: navigationRouter,
+                navigateToChat: $navigateToChat,
+                navigateToSurprises: $navigateToSurprises,
+                navigateToSpecialDays: $navigateToSpecialDays,
+                navigateToPlans: $navigateToPlans,
+                navigateToMovies: $navigateToMovies,
+                navigateToSongs: $navigateToSongs,
+                navigateToPlaces: $navigateToPlaces,
+                navigateToSecretVault: $navigateToSecretVault
+            )
          
             
             // Timer & Lifecycle

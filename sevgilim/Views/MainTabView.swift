@@ -24,6 +24,9 @@ struct MainTabView: View {
     @EnvironmentObject var moodService: MoodService
     @EnvironmentObject var navigationRouter: AppNavigationRouter
     
+    // MARK: - Cached ViewModel (prevents recreation on tab switch)
+    @State private var homeViewModel: HomeViewModel?
+    
     @State private var selectedTab = 0
     
     var body: some View {
@@ -32,20 +35,12 @@ struct MainTabView: View {
             Group {
                 switch selectedTab {
                 case 0:
-                    HomeView(
-                        viewModel: HomeViewModel(
-                            authService: authService,
-                            relationshipService: relationshipService,
-                            memoryService: memoryService,
-                            photoService: photoService,
-                            noteService: noteService,
-                            planService: planService,
-                            surpriseService: surpriseService,
-                            specialDayService: specialDayService,
-                            messageService: messageService,
-                            moodService: moodService
-                        )
-                    )
+                    if let viewModel = homeViewModel {
+                        HomeView(viewModel: viewModel)
+                    } else {
+                        ProgressView()
+                            .onAppear { createHomeViewModel() }
+                    }
                 case 1:
                     MemoriesView()
                 case 2:
@@ -130,6 +125,23 @@ struct MainTabView: View {
         if navigationRouter.photosTrigger > 0 { selectedTab = 2 }
         if navigationRouter.notesTrigger > 0 { selectedTab = 3 }
         if navigationRouter.memoriesTrigger > 0 { selectedTab = 1 }
+    }
+    
+    // MARK: - ViewModel Factory
+    private func createHomeViewModel() {
+        guard homeViewModel == nil else { return }
+        homeViewModel = HomeViewModel(
+            authService: authService,
+            relationshipService: relationshipService,
+            memoryService: memoryService,
+            photoService: photoService,
+            noteService: noteService,
+            planService: planService,
+            surpriseService: surpriseService,
+            specialDayService: specialDayService,
+            messageService: messageService,
+            moodService: moodService
+        )
     }
 }
 

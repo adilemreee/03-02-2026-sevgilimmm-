@@ -110,7 +110,9 @@ class SpotifyService: ObservableObject {
             throw SpotifyError.missingCredentials
         }
         
-        let url = URL(string: "https://accounts.spotify.com/api/token")!
+        guard let url = URL(string: "https://accounts.spotify.com/api/token") else {
+            throw SpotifyError.invalidURL
+        }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
@@ -196,6 +198,7 @@ struct SpotifyTokenResponse: Codable {
 enum SpotifyError: Error {
     case missingCredentials
     case invalidCredentials
+    case invalidURL
     case networkError
     case invalidResponse
 }

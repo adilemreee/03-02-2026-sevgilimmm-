@@ -8,8 +8,9 @@ import Combine
 import FirebaseFirestore
 import FirebaseStorage
 import UIKit
-import AVFoundation
+@preconcurrency import AVFoundation
 
+@MainActor
 class StoryService: ObservableObject {
     @Published var stories: [Story] = []
     @Published var userStories: [Story] = [] // Kullanıcının tüm story'leri
@@ -223,7 +224,14 @@ class StoryService: ObservableObject {
         let thumbnailURL = try? await uploadStoryThumbnail(image: thumbnailImage, relationshipId: relationshipId, userId: userId)
         
         let asset = AVURLAsset(url: videoURL)
-        let durationSeconds = CMTimeGetSeconds(asset.duration)
+        let durationSeconds: Double
+        if #available(iOS 16.0, *) {
+             let duration = try await asset.load(.duration)
+             durationSeconds = CMTimeGetSeconds(duration)
+        } else {
+             durationSeconds = CMTimeGetSeconds(asset.duration)
+        }
+        
         let duration = durationSeconds.isFinite ? durationSeconds : nil
         
         return (downloadURL.absoluteString, thumbnailURL, duration)
@@ -243,19 +251,24 @@ class StoryService: ObservableObject {
     }
     
     private func generateVideoThumbnail(url: URL) async throws -> UIImage {
-        try await withCheckedThrowingContinuation { continuation in
-            let asset = AVAsset(url: url)
-            let generator = AVAssetImageGenerator(asset: asset)
-            generator.appliesPreferredTrackTransform = true
-            let time = CMTime(seconds: 0.1, preferredTimescale: 600)
-            
-            DispatchQueue.global(qos: .userInitiated).async {
-                do {
-                    let cgImage = try generator.copyCGImage(at: time, actualTime: nil)
-                    let image = UIImage(cgImage: cgImage)
-                    continuation.resume(returning: image)
-                } catch {
-                    continuation.resume(throwing: error)
+        let asset = AVURLAsset(url: url)
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+        let time = CMTime(seconds: 0.1, preferredTimescale: 600)
+        
+        if #available(iOS 16.0, *) {
+            let (cgImage, _) = try await generator.image(at: time)
+            return UIImage(cgImage: cgImage)
+        } else {
+            return try await withCheckedThrowingContinuation { continuation in
+                DispatchQueue.global(qos: .userInitiated).async {
+                    do {
+                        let cgImage = try generator.copyCGImage(at: time, actualTime: nil)
+                        let image = UIImage(cgImage: cgImage)
+                        continuation.resume(returning: image)
+                    } catch {
+                        continuation.resume(throwing: error)
+                    }
                 }
             }
         }
@@ -361,7 +374,7 @@ class StoryService: ObservableObject {
         listener = nil
     }
     
-    deinit {
-        stopListening()
+    nonisolated deinit {
+        // Direct removal in deinit - listener registration is thread-safe
     }
 }

@@ -13,51 +13,35 @@ import UserNotifications
 struct sevgilimApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     
-    @StateObject private var authService = AuthenticationService()
-    @StateObject private var relationshipService = RelationshipService()
-    @StateObject private var memoryService = MemoryService()
-    @StateObject private var photoService = PhotoService()
-    @StateObject private var noteService = NoteService()
-    @StateObject private var movieService = MovieService()
-    @StateObject private var planService = PlanService()
-    @StateObject private var placeService = PlaceService()
-    @StateObject private var songService = SongService()
-    @StateObject private var spotifyService = SpotifyService()
-    @StateObject private var surpriseService = SurpriseService()
-    @StateObject private var specialDayService = SpecialDayService()
-    @StateObject private var storyService = StoryService()
-    @StateObject private var messageService = MessageService()
-    @StateObject private var themeManager = ThemeManager()
-    @StateObject private var greetingService = GreetingService()
-    @StateObject private var secretVaultService = SecretVaultService()
-    @StateObject private var moodService = MoodService()
-    @StateObject private var navigationRouter = AppNavigationRouter()
- 
+    // MARK: - Centralized Dependencies Container
+    @StateObject private var dependencies = AppDependencies()
     
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .environmentObject(authService)
-                .environmentObject(relationshipService)
-                .environmentObject(memoryService)
-                .environmentObject(photoService)
-                .environmentObject(noteService)
-                .environmentObject(movieService)
-                .environmentObject(planService)
-                .environmentObject(placeService)
-                .environmentObject(songService)
-                .environmentObject(spotifyService)
-                .environmentObject(surpriseService)
-                .environmentObject(specialDayService)
-                .environmentObject(storyService)
-                .environmentObject(messageService)
-                .environmentObject(moodService)
-                .environmentObject(themeManager)
-                .environmentObject(greetingService)
-                .environmentObject(secretVaultService)
-                .environmentObject(navigationRouter)
+                // Core services (always needed)
+                .environmentObject(dependencies.authService)
+                .environmentObject(dependencies.relationshipService)
+                .environmentObject(dependencies.themeManager)
+                .environmentObject(dependencies.navigationRouter)
+                // Feature services (lazy loaded)
+                .environmentObject(dependencies.memoryService)
+                .environmentObject(dependencies.photoService)
+                .environmentObject(dependencies.noteService)
+                .environmentObject(dependencies.movieService)
+                .environmentObject(dependencies.planService)
+                .environmentObject(dependencies.placeService)
+                .environmentObject(dependencies.songService)
+                .environmentObject(dependencies.spotifyService)
+                .environmentObject(dependencies.surpriseService)
+                .environmentObject(dependencies.specialDayService)
+                .environmentObject(dependencies.storyService)
+                .environmentObject(dependencies.messageService)
+                .environmentObject(dependencies.moodService)
+                .environmentObject(dependencies.greetingService)
+                .environmentObject(dependencies.secretVaultService)
                 .onAppear {
-                    appDelegate.navigationRouter = navigationRouter
+                    appDelegate.navigationRouter = dependencies.navigationRouter
                 }
         }
     }

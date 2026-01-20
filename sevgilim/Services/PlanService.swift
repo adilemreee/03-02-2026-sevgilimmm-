@@ -58,16 +58,19 @@ class PlanService: ObservableObject {
     
     func addPlan(relationshipId: String, title: String, description: String?, 
                 date: Date?, reminderEnabled: Bool, userId: String) async throws {
-        let data: [String: Any] = [
+        var data: [String: Any] = [
             "relationshipId": relationshipId,
             "title": title,
             "description": description as Any,
-            "date": date != nil ? Timestamp(date: date!) : NSNull(),
             "isCompleted": false,
             "reminderEnabled": reminderEnabled,
             "createdBy": userId,
             "createdAt": Timestamp(date: Date())
         ]
+        
+        if let date = date {
+            data["date"] = Timestamp(date: date)
+        }
         
         try await db.collection("plans").addDocument(data: data)
     }
@@ -91,12 +94,17 @@ class PlanService: ObservableObject {
                    date: Date?, reminderEnabled: Bool) async throws {
         guard let planId = plan.id else { return }
         
-        let updates: [String: Any] = [
+        var updates: [String: Any] = [
             "title": title,
             "description": description as Any,
-            "date": date != nil ? Timestamp(date: date!) : FieldValue.delete(),
             "reminderEnabled": reminderEnabled
         ]
+        
+        if let date = date {
+            updates["date"] = Timestamp(date: date)
+        } else {
+            updates["date"] = FieldValue.delete()
+        }
         
         try await db.collection("plans").document(planId).updateData(updates)
     }
