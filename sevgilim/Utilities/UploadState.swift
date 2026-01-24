@@ -24,6 +24,10 @@ final class UploadState: ObservableObject {
         isUploading = true
     }
     
+    func update(message: String) {
+        self.message = message
+    }
+    
     func finish() {
         isUploading = false
     }

@@ -244,7 +244,7 @@ struct MemoryCardModern: View {
             }
             
             // Photo with Caching (Thumbnail)
-            if let photoURL = memory.photoURL {
+            if let photoURL = memory.firstPhotoURL {
                 CachedAsyncImage(url: photoURL, thumbnail: true) { image, _ in
                     image
                         .resizable()
@@ -381,55 +381,65 @@ struct MemoryDetailView: View {
         NavigationView {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    // Photo
-                    if let photoURL = currentMemory.photoURL {
-                        GeometryReader { geometry in
-                            Button {
-                                let photo = Photo(
-                                    id: currentMemory.id,
-                                    relationshipId: currentMemory.relationshipId,
-                                    imageURL: photoURL,
-                                    thumbnailURL: photoURL,
-                                    videoURL: nil,
-                                    title: currentMemory.title,
-                                    date: currentMemory.date,
-                                    location: currentMemory.location,
-                                    tags: currentMemory.tags,
-                                    uploadedBy: currentMemory.createdBy,
-                                    createdAt: currentMemory.createdAt,
-                                    mediaType: .photo,
-                                    duration: nil
-                                )
-                                singlePhotoService.photos = [photo]
-                                photoViewerIndex = 0
-                                isShowingPhotoViewer = true
-                            } label: {
-                                CachedAsyncImage(url: photoURL, thumbnail: false) { image, _ in
-                                    image
-                                        .resizable()
-                                        .scaledToFit()
-                                        .frame(maxWidth: geometry.size.width)
-                                        .frame(height: min(geometry.size.width * 0.75, 360))
-                                        .clipped()
-                                } placeholder: {
-                                    ZStack {
-                                        Color.gray.opacity(0.1)
-                                        ProgressView()
+                    // Photos Carousel
+                    if !currentMemory.allPhotoURLs.isEmpty {
+                        TabView {
+                            ForEach(Array(currentMemory.allPhotoURLs.enumerated()), id: \.offset) { index, photoURL in
+                                Button {
+                                    let photos = currentMemory.allPhotoURLs.map { url in
+                                        Photo(
+                                            id: "\(currentMemory.id ?? "")_\(url.hashValue)",
+                                            relationshipId: currentMemory.relationshipId,
+                                            imageURL: url,
+                                            thumbnailURL: url,
+                                            videoURL: nil,
+                                            title: currentMemory.title,
+                                            date: currentMemory.date,
+                                            location: currentMemory.location,
+                                            tags: currentMemory.tags,
+                                            uploadedBy: currentMemory.createdBy,
+                                            createdAt: currentMemory.createdAt,
+                                            mediaType: .photo,
+                                            duration: nil
+                                        )
+                                    }
+                                    singlePhotoService.photos = photos
+                                    photoViewerIndex = index
+                                    isShowingPhotoViewer = true
+                                } label: {
+                                    CachedAsyncImage(url: photoURL, thumbnail: false) { image, _ in
+                                        image
+                                            .resizable()
+                                            .scaledToFill()
+                                            .frame(height: 300)
+                                            .clipped()
+                                    } placeholder: {
+                                        ZStack {
+                                            Color.gray.opacity(0.1)
+                                            ProgressView()
+                                        }
+                                        .frame(height: 300)
                                     }
                                 }
-                                .frame(maxWidth: .infinity)
-                                .frame(height: min(geometry.size.width * 0.75, 360))
-                                .background(Color.black.opacity(0.05))
-                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
-                                )
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
                         }
-                        .frame(maxWidth: .infinity)
-                        .frame(height: UIScreen.main.bounds.width * 0.75)
+                        .tabViewStyle(.page(indexDisplayMode: currentMemory.allPhotoURLs.count > 1 ? .automatic : .never))
+                        .frame(height: 300)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .overlay(
+                            // Fotoğraf sayısı göstergesi
+                            currentMemory.allPhotoURLs.count > 1 ?
+                            Text("\(currentMemory.allPhotoURLs.count) fotoğraf")
+                                .font(.caption2)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(.ultraThinMaterial)
+                                .cornerRadius(8)
+                                .padding(8)
+                            : nil,
+                            alignment: .topTrailing
+                        )
                     }
                     
                     // Title
@@ -758,8 +768,9 @@ struct AddMemoryView: View {
     @State private var content = ""
     @State private var date = Date()
     @State private var location = ""
-    @State private var selectedImage: UIImage?
+    @State private var selectedImages: [UIImage] = []  // Çoklu fotoğraf desteği
     @State private var showingImagePicker = false
+    @State private var isLoadingPhotos = false  // Fotoğraf yükleme durumu
     @State private var tagInput = ""
     @State private var tags: [String] = []
     @StateObject private var uploadState = UploadState(message: "Anı kaydediliyor...")
@@ -806,9 +817,30 @@ struct AddMemoryView: View {
             }
         }
         .sheet(isPresented: $showingImagePicker) {
-            ImagePicker(image: $selectedImage)
+            MultiImagePicker(selectedImages: $selectedImages, maxSelection: 10 - selectedImages.count, isLoadingImages: $isLoadingPhotos)
         }
         .overlay(UploadStatusOverlay(state: uploadState))
+        .overlay {
+            // Fotoğraf yükleme overlay
+            if isLoadingPhotos {
+                ZStack {
+                    Color.black.opacity(0.3)
+                        .ignoresSafeArea()
+                    VStack(spacing: 12) {
+                        ProgressView()
+                            .scaleEffect(1.4)
+                        Text("Fotoğraflar yükleniyor...")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                    }
+                    .padding(.horizontal, 32)
+                    .padding(.vertical, 24)
+                    .background(.ultraThinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .shadow(radius: 12)
+                }
+            }
+        }
         .alert(
             "Hata",
             isPresented: Binding(
@@ -832,17 +864,22 @@ struct AddMemoryView: View {
         uploadState.start(message: "Anı kaydediliyor...")
         Task {
             do {
-                var photoURL: String? = nil
-                if let image = selectedImage {
-                    photoURL = try await StorageService.shared.uploadMemoryPhoto(image, relationshipId: relationshipId)
+                var photoURLs: [String] = []
+                
+                // Upload all selected images
+                for (index, image) in selectedImages.enumerated() {
+                    uploadState.update(message: "Fotoğraf yükleniyor (\(index + 1)/\(selectedImages.count))...")
+                    let url = try await StorageService.shared.uploadMemoryPhoto(image, relationshipId: relationshipId)
+                    photoURLs.append(url)
                 }
                 
+                uploadState.update(message: "Anı kaydediliyor...")
                 try await memoryService.addMemory(
                     relationshipId: relationshipId,
                     title: title.trimmingCharacters(in: .whitespacesAndNewlines),
                     content: content.trimmingCharacters(in: .whitespacesAndNewlines),
                     date: date,
-                    photoURL: photoURL,
+                    photoURLs: photoURLs,
                     location: location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : location,
                     tags: tags.isEmpty ? nil : tags,
                     userId: userId
@@ -873,69 +910,84 @@ struct AddMemoryView: View {
     @ViewBuilder
     private var imagePickerSection: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("Fotoğraf")
-                .font(.headline)
-            Text("Anıyı daha özel kılmak için bir fotoğraf ekleyebilirsin.")
+            HStack {
+                Text("Fotoğraflar")
+                    .font(.headline)
+                Spacer()
+                if !selectedImages.isEmpty {
+                    Text("\(selectedImages.count)/10")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            Text("Anıyı daha özel kılmak için fotoğraflar ekleyebilirsin.")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
             
-            if let image = selectedImage {
-                Image(uiImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(maxHeight: 230)
-                    .frame(maxWidth: .infinity)
-                    .clipped()
-                    .clipShape(RoundedRectangle(cornerRadius: 18))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 18)
-                            .stroke(Color.white.opacity(0.15), lineWidth: 1)
-                    )
-                
-                HStack(spacing: 12) {
-                    Button {
-                        showingImagePicker = true
-                    } label: {
-                        Label("Fotoğrafı Değiştir", systemImage: "arrow.triangle.2.circlepath")
-                            .font(.subheadline.bold())
-                            .padding(.vertical, 12)
-                            .frame(maxWidth: .infinity)
-                            .background(
-                                RoundedRectangle(cornerRadius: 14)
-                                    .fill(themeManager.currentTheme.primaryColor.opacity(0.16))
-                            )
+            if !selectedImages.isEmpty {
+                // Seçilen fotoğraflar grid görünümü
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 100), spacing: 8)], spacing: 8) {
+                    ForEach(Array(selectedImages.enumerated()), id: \.offset) { index, image in
+                        ZStack(alignment: .topTrailing) {
+                            Image(uiImage: image)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: 100, height: 100)
+                                .clipped()
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                            
+                            // Silme butonu
+                            Button {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    _ = selectedImages.remove(at: index)
+                                }
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.title3)
+                                    .foregroundColor(.white)
+                                    .background(Circle().fill(Color.black.opacity(0.5)))
+                            }
+                            .padding(4)
+                        }
                     }
                     
-                    Button(role: .destructive) {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            selectedImage = nil
-                        }
-                    } label: {
-                        Label("Kaldır", systemImage: "trash")
-                            .font(.subheadline.bold())
-                            .padding(.vertical, 12)
-                            .frame(maxWidth: .infinity)
+                    // Daha fazla fotoğraf ekle butonu
+                    if selectedImages.count < 10 {
+                        Button {
+                            showingImagePicker = true
+                        } label: {
+                            VStack(spacing: 8) {
+                                Image(systemName: "plus")
+                                    .font(.title2)
+                                Text("Ekle")
+                                    .font(.caption)
+                            }
+                            .foregroundColor(themeManager.currentTheme.primaryColor)
+                            .frame(width: 100, height: 100)
                             .background(
-                                RoundedRectangle(cornerRadius: 14)
-                                    .fill(Color.red.opacity(0.12))
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(themeManager.currentTheme.primaryColor.opacity(0.5), style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
                             )
+                        }
                     }
                 }
-                .foregroundColor(themeManager.currentTheme.primaryColor)
             } else {
                 Button {
                     showingImagePicker = true
                 } label: {
                     VStack(spacing: 16) {
-                        Image(systemName: "photo.on.rectangle")
+                        Image(systemName: "photo.on.rectangle.angled")
                             .font(.system(size: 44, weight: .medium))
                             .foregroundColor(themeManager.currentTheme.primaryColor)
                         Text("Fotoğraf eklemek için dokun")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
+                        Text("En fazla 10 fotoğraf")
+                            .font(.caption)
+                            .foregroundColor(.secondary.opacity(0.7))
                     }
                     .frame(maxWidth: .infinity)
-                    .frame(height: 220)
+                    .frame(height: 180)
                     .background(
                         RoundedRectangle(cornerRadius: 18)
                             .fill(Color(.systemBackground).opacity(0.65))
@@ -1145,13 +1197,17 @@ struct EditMemoryView: View {
     @State private var content: String
     @State private var date: Date
     @State private var location: String
-    @State private var selectedImage: UIImage?
-    @State private var showingImagePicker = false
     @State private var tagInput = ""
     @State private var tags: [String]
-    @State private var currentPhotoURL: String?
-    @State private var didRemoveExistingPhoto = false
-    private let originalPhotoURL: String?
+    
+    // Çoklu fotoğraf desteği
+    @State private var existingPhotoURLs: [String]  // Mevcut fotoğraflar (sunucuda)
+    @State private var newImages: [UIImage] = []     // Yeni eklenen fotoğraflar
+    @State private var removedURLs: [String] = []    // Silinen fotoğrafların URL'leri
+    @State private var showingImagePicker = false
+    @State private var isLoadingPhotos = false       // Fotoğraf yükleme durumu
+    
+    private let originalPhotoURLs: [String]
     @StateObject private var uploadState = UploadState(message: "Anı güncelleniyor...")
     
     init(memory: Memory) {
@@ -1161,8 +1217,8 @@ struct EditMemoryView: View {
         _date = State(initialValue: memory.date)
         _location = State(initialValue: memory.location ?? "")
         _tags = State(initialValue: memory.tags ?? [])
-        _currentPhotoURL = State(initialValue: memory.photoURL)
-        self.originalPhotoURL = memory.photoURL
+        _existingPhotoURLs = State(initialValue: memory.allPhotoURLs)
+        self.originalPhotoURLs = memory.allPhotoURLs
     }
     
     var body: some View {
@@ -1208,9 +1264,30 @@ struct EditMemoryView: View {
             }
         }
         .sheet(isPresented: $showingImagePicker) {
-            ImagePicker(image: $selectedImage)
+            MultiImagePicker(selectedImages: $newImages, maxSelection: 10 - existingPhotoURLs.count - newImages.count, isLoadingImages: $isLoadingPhotos)
         }
         .overlay(UploadStatusOverlay(state: uploadState))
+        .overlay {
+            // Fotoğraf yükleme overlay
+            if isLoadingPhotos {
+                ZStack {
+                    Color.black.opacity(0.3)
+                        .ignoresSafeArea()
+                    VStack(spacing: 12) {
+                        ProgressView()
+                            .scaleEffect(1.4)
+                        Text("Fotoğraflar yükleniyor...")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                    }
+                    .padding(.horizontal, 32)
+                    .padding(.vertical, 24)
+                    .background(.ultraThinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .shadow(radius: 12)
+                }
+            }
+        }
         .alert(
             "Hata",
             isPresented: Binding(
@@ -1242,46 +1319,40 @@ struct EditMemoryView: View {
         uploadState.start(message: "Anı güncelleniyor...")
         
         Task {
-            var uploadedPhotoURL: String?
+            var uploadedNewURLs: [String] = []
             do {
-                var finalPhotoURL: String? = nil
-                var shouldRemovePhoto = false
-                
-                if let image = selectedImage {
-                    let newURL = try await StorageService.shared.uploadMemoryPhoto(image, relationshipId: memory.relationshipId)
-                    finalPhotoURL = newURL
-                    uploadedPhotoURL = newURL
-                } else if let currentPhotoURL = currentPhotoURL {
-                    finalPhotoURL = currentPhotoURL
-                } else if didRemoveExistingPhoto {
-                    shouldRemovePhoto = true
+                // 1. Yeni fotoğrafları yükle
+                for (index, image) in newImages.enumerated() {
+                    uploadState.update(message: "Fotoğraf yükleniyor (\(index + 1)/\(newImages.count))...")
+                    let url = try await StorageService.shared.uploadMemoryPhoto(image, relationshipId: memory.relationshipId)
+                    uploadedNewURLs.append(url)
                 }
+                
+                // 2. Final URL listesi: mevcut (silinmemiş) + yeni yüklenen
+                let finalPhotoURLs = existingPhotoURLs + uploadedNewURLs
                 
                 let cleanedTags = tags
                     .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                     .filter { !$0.isEmpty }
                 
+                uploadState.update(message: "Anı kaydediliyor...")
                 try await memoryService.updateMemory(
                     memory,
                     title: trimmedTitle,
                     content: trimmedContent,
                     date: date,
-                    photoURL: finalPhotoURL,
-                    removePhoto: shouldRemovePhoto,
+                    photoURLs: finalPhotoURLs,
+                    removeAllPhotos: finalPhotoURLs.isEmpty,
                     location: trimmedLocation.isEmpty ? nil : trimmedLocation,
                     tags: cleanedTags.isEmpty ? nil : cleanedTags
                 )
                 
-                if selectedImage != nil,
-                   let original = originalPhotoURL,
-                   let final = finalPhotoURL,
-                   original != final {
+                // 3. Silinen fotoğrafları arka planda sil
+                if !removedURLs.isEmpty {
                     Task.detached(priority: .background) {
-                        try? await StorageService.shared.deleteImage(url: original)
-                    }
-                } else if shouldRemovePhoto, let original = originalPhotoURL {
-                    Task.detached(priority: .background) {
-                        try? await StorageService.shared.deleteImage(url: original)
+                        for url in removedURLs {
+                            try? await StorageService.shared.deleteImage(url: url)
+                        }
                     }
                 }
                 
@@ -1290,9 +1361,12 @@ struct EditMemoryView: View {
                     dismiss()
                 }
             } catch {
-                if let uploadedPhotoURL = uploadedPhotoURL {
+                // Hata durumunda yüklenen yeni fotoğrafları sil
+                if !uploadedNewURLs.isEmpty {
                     Task.detached(priority: .background) {
-                        try? await StorageService.shared.deleteImage(url: uploadedPhotoURL)
+                        for url in uploadedNewURLs {
+                            try? await StorageService.shared.deleteImage(url: url)
+                        }
                     }
                 }
                 
@@ -1315,123 +1389,136 @@ struct EditMemoryView: View {
     @ViewBuilder
     private var imagePickerSection: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("Fotoğraf")
-                .font(.headline)
-            Text("Anını güncellerken fotoğrafı değiştirebilir veya kaldırabilirsin.")
+            HStack {
+                Text("Fotoğraflar")
+                    .font(.headline)
+                Spacer()
+                let totalCount = existingPhotoURLs.count + newImages.count
+                if totalCount > 0 {
+                    Text("\(totalCount)/10")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            Text("Fotoğraf ekleyebilir veya mevcut fotoğrafları kaldırabilirsin.")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
             
-            if let image = selectedImage {
-                Image(uiImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(maxHeight: 230)
-                    .frame(maxWidth: .infinity)
-                    .clipped()
-                    .clipShape(RoundedRectangle(cornerRadius: 18))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 18)
-                            .stroke(Color.white.opacity(0.15), lineWidth: 1)
-                    )
-                
-                HStack(spacing: 12) {
-                    Button {
-                        showingImagePicker = true
-                    } label: {
-                        Label("Fotoğrafı Değiştir", systemImage: "arrow.triangle.2.circlepath")
-                            .font(.subheadline.bold())
-                            .padding(.vertical, 12)
-                            .frame(maxWidth: .infinity)
-                            .background(
-                                RoundedRectangle(cornerRadius: 14)
-                                    .fill(themeManager.currentTheme.primaryColor.opacity(0.16))
-                            )
+            let totalPhotos = existingPhotoURLs.count + newImages.count
+            
+            if totalPhotos > 0 {
+                // Grid görünümü
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 100), spacing: 8)], spacing: 8) {
+                    // Mevcut fotoğraflar (sunucudan)
+                    ForEach(Array(existingPhotoURLs.enumerated()), id: \.element) { index, url in
+                        ZStack(alignment: .topTrailing) {
+                            CachedAsyncImage(url: url, thumbnail: true) { image, _ in
+                                image
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                                    .frame(width: 100, height: 100)
+                                    .clipped()
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                            } placeholder: {
+                                ZStack {
+                                    Color.gray.opacity(0.1)
+                                    ProgressView()
+                                }
+                                .frame(width: 100, height: 100)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                            }
+                            
+                            // Silme butonu
+                            Button {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    removedURLs.append(url)
+                                    existingPhotoURLs.remove(at: index)
+                                }
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.title3)
+                                    .foregroundColor(.white)
+                                    .background(Circle().fill(Color.black.opacity(0.5)))
+                            }
+                            .padding(4)
+                        }
                     }
                     
-                    Button(role: .destructive) {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            selectedImage = nil
+                    // Yeni eklenen fotoğraflar (henüz yüklenmemiş)
+                    ForEach(Array(newImages.enumerated()), id: \.offset) { index, image in
+                        ZStack(alignment: .topTrailing) {
+                            Image(uiImage: image)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: 100, height: 100)
+                                .clipped()
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                                .overlay(
+                                    // "Yeni" badge
+                                    Text("Yeni")
+                                        .font(.caption2)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(themeManager.currentTheme.primaryColor)
+                                        .foregroundColor(.white)
+                                        .cornerRadius(6)
+                                        .padding(4),
+                                    alignment: .bottomLeading
+                                )
+                            
+                            // Silme butonu
+                            Button {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    _ = newImages.remove(at: index)
+                                }
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.title3)
+                                    .foregroundColor(.white)
+                                    .background(Circle().fill(Color.black.opacity(0.5)))
+                            }
+                            .padding(4)
                         }
-                    } label: {
-                        Label("Kaldır", systemImage: "trash")
-                            .font(.subheadline.bold())
-                            .padding(.vertical, 12)
-                            .frame(maxWidth: .infinity)
-                            .background(
-                                RoundedRectangle(cornerRadius: 14)
-                                    .fill(Color.red.opacity(0.12))
-                            )
-                    }
-                }
-                .foregroundColor(themeManager.currentTheme.primaryColor)
-            } else if let remoteURL = currentPhotoURL {
-                CachedAsyncImage(url: remoteURL, thumbnail: false) { image, _ in
-                    image
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(maxHeight: 230)
-                        .frame(maxWidth: .infinity)
-                        .clipped()
-                        .clipShape(RoundedRectangle(cornerRadius: 18))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 18)
-                                .stroke(Color.white.opacity(0.15), lineWidth: 1)
-                        )
-                } placeholder: {
-                    ZStack {
-                        Color.gray.opacity(0.1)
-                        ProgressView()
-                    }
-                    .frame(maxHeight: 230)
-                    .frame(maxWidth: .infinity)
-                    .clipShape(RoundedRectangle(cornerRadius: 18))
-                }
-                
-                HStack(spacing: 12) {
-                    Button {
-                        showingImagePicker = true
-                    } label: {
-                        Label("Fotoğrafı Değiştir", systemImage: "arrow.triangle.2.circlepath")
-                            .font(.subheadline.bold())
-                            .padding(.vertical, 12)
-                            .frame(maxWidth: .infinity)
-                            .background(
-                                RoundedRectangle(cornerRadius: 14)
-                                    .fill(themeManager.currentTheme.primaryColor.opacity(0.16))
-                            )
                     }
                     
-                    Button(role: .destructive) {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            currentPhotoURL = nil
-                            didRemoveExistingPhoto = true
-                        }
-                    } label: {
-                        Label("Kaldır", systemImage: "trash")
-                            .font(.subheadline.bold())
-                            .padding(.vertical, 12)
-                            .frame(maxWidth: .infinity)
+                    // Daha fazla fotoğraf ekle butonu
+                    if totalPhotos < 10 {
+                        Button {
+                            showingImagePicker = true
+                        } label: {
+                            VStack(spacing: 8) {
+                                Image(systemName: "plus")
+                                    .font(.title2)
+                                Text("Ekle")
+                                    .font(.caption)
+                            }
+                            .foregroundColor(themeManager.currentTheme.primaryColor)
+                            .frame(width: 100, height: 100)
                             .background(
-                                RoundedRectangle(cornerRadius: 14)
-                                    .fill(Color.red.opacity(0.12))
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(themeManager.currentTheme.primaryColor.opacity(0.5), style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
                             )
+                        }
                     }
                 }
-                .foregroundColor(themeManager.currentTheme.primaryColor)
             } else {
+                // Boş durum - ilk fotoğrafı ekle
                 Button {
                     showingImagePicker = true
                 } label: {
                     VStack(spacing: 16) {
-                        Image(systemName: "photo.on.rectangle")
+                        Image(systemName: "photo.on.rectangle.angled")
                             .font(.system(size: 44, weight: .medium))
                             .foregroundColor(themeManager.currentTheme.primaryColor)
-                        Text("Yeni bir fotoğraf eklemek için dokun")
+                        Text("Fotoğraf eklemek için dokun")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
+                        Text("En fazla 10 fotoğraf")
+                            .font(.caption)
+                            .foregroundColor(.secondary.opacity(0.7))
                     }
                     .frame(maxWidth: .infinity)
-                    .frame(height: 220)
+                    .frame(height: 180)
                     .background(
                         RoundedRectangle(cornerRadius: 18)
                             .fill(Color(.systemBackground).opacity(0.65))

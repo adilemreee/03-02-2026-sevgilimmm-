@@ -13,6 +13,7 @@ enum MoodFeeling: String, CaseIterable, Codable, Identifiable {
     case excited
     case tired
     case love
+    case horny
 
     var id: String { rawValue }
 
@@ -30,6 +31,8 @@ enum MoodFeeling: String, CaseIterable, Codable, Identifiable {
             return "Yorgun"
         case .love:
             return "Aşık"
+        case .horny:
+            return "Azgıntılı"
         }
     }
 
@@ -47,6 +50,8 @@ enum MoodFeeling: String, CaseIterable, Codable, Identifiable {
             return "🥱"
         case .love:
             return "😍"
+        case .horny:
+            return "😈"
         }
     }
 }

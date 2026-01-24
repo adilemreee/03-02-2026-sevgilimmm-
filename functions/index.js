@@ -220,12 +220,13 @@ const getRelationshipUserIds = (relationship) => {
 };
 
 const moodDetails = {
-  happy: {title: "Mutlu", emoji: "😊"},
-  missing: {title: "Özledim", emoji: "🥺"},
-  sad: {title: "Üzgün", emoji: "😔"},
-  excited: {title: "Heyecanlı", emoji: "🤩"},
-  tired: {title: "Yorgun", emoji: "🥱"},
-  love: {title: "Aşık", emoji: "😍"},
+  happy: {title: "aşkımmmmm aşırıı mutluyumm", emoji: "😊"},
+  missing: {title: "Çokkk aşırııı özledim", emoji: "🥺"},
+  sad: {title: "Üzgüntülüyüm", emoji: "😔"},
+  excited: {title: "kalbim kıpır kıpırr", emoji: "🤩"},
+  tired: {title: "Yorgunumm aşkım", emoji: "🥱"},
+  love: {title: "Aşığımm sana", emoji: "😍"},
+  horny: {title: "azgıntıyım bayılcam...", emoji: "😈"},
 };
 
 const describeMood = (value) => {

@@ -49,7 +49,12 @@ class MemoryService: ObservableObject {
                 
                 // Process documents efficiently
                 let newMemories = documents.compactMap { doc -> Memory? in
-                    try? doc.data(as: Memory.self)
+                    do {
+                        return try doc.data(as: Memory.self)
+                    } catch {
+                        print("❌ Memory decode error for doc \(doc.documentID): \(error)")
+                        return nil
+                    }
                 }
                 
                 // Client-side sorting: En yeni tarihler üstte
@@ -63,14 +68,14 @@ class MemoryService: ObservableObject {
     }
     
     func addMemory(relationshipId: String, title: String, content: String, 
-                  date: Date, photoURL: String?, location: String?, 
+                  date: Date, photoURLs: [String], location: String?, 
                   tags: [String]?, userId: String) async throws {
-        let data: [String: Any] = [
+        var data: [String: Any] = [
             "relationshipId": relationshipId,
             "title": title,
             "content": content,
             "date": Timestamp(date: date),
-            "photoURL": photoURL as Any,
+            "photoURLs": photoURLs,
             "location": location as Any,
             "tags": tags as Any,
             "createdBy": userId,
@@ -79,6 +84,11 @@ class MemoryService: ObservableObject {
             "comments": []
         ]
         
+        // Geriye uyumluluk: İlk fotoğrafı photoURL olarak da kaydet
+        if let firstPhoto = photoURLs.first {
+            data["photoURL"] = firstPhoto
+        }
+        
         try await db.collection("memories").addDocument(data: data)
     }
     
@@ -86,8 +96,8 @@ class MemoryService: ObservableObject {
                       title: String,
                       content: String,
                       date: Date,
-                      photoURL: String?,
-                      removePhoto: Bool,
+                      photoURLs: [String],
+                      removeAllPhotos: Bool,
                       location: String?,
                       tags: [String]?) async throws {
         guard let memoryId = memory.id else { return }
@@ -111,9 +121,12 @@ class MemoryService: ObservableObject {
             data["tags"] = FieldValue.delete()
         }
         
-        if let photoURL = photoURL {
-            data["photoURL"] = photoURL
-        } else if removePhoto {
+        // Fotoğrafları güncelle
+        if !photoURLs.isEmpty {
+            data["photoURLs"] = photoURLs
+            data["photoURL"] = photoURLs.first  // Geriye uyumluluk
+        } else if removeAllPhotos {
+            data["photoURLs"] = []
             data["photoURL"] = FieldValue.delete()
         }
         
@@ -179,10 +192,12 @@ class MemoryService: ObservableObject {
         // Delete from Firestore first for immediate feedback
         try await db.collection("memories").document(memoryId).delete()
         
-        // Delete associated photo in background
-        if let photoURL = memory.photoURL {
+        // Delete all associated photos in background
+        if !memory.photoURLs.isEmpty {
             Task.detached(priority: .background) {
-                try? await StorageService.shared.deleteImage(url: photoURL)
+                for photoURL in memory.photoURLs {
+                    try? await StorageService.shared.deleteImage(url: photoURL)
+                }
             }
         }
     }
