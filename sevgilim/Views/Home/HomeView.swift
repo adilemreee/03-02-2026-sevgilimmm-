@@ -34,7 +34,6 @@ struct HomeView: View {
     @State private var navigateToSpecialDays = false
     @State private var showingNotifications = false
     @State private var navigateToSecretVault = false
-    @State private var navigateToLocation = false
     @State private var isUpdatingMood = false
     
     let timer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
@@ -79,14 +78,6 @@ struct HomeView: View {
                                             try? await viewModel.markSurpriseAsOpened(surprise)
                                         }
                                     }
-                                )
-                            }
-                            
-                            // Partner Location Card
-                            if let userId = currentUser.id {
-                                PartnerLocationHomeCard(
-                                    partnerName: relationship.partnerName(for: userId),
-                                    onTap: { navigateToLocation = true }
                                 )
                             }
                             
@@ -193,7 +184,6 @@ struct HomeView: View {
             .navigationDestination(isPresented: $navigateToSurprises) { SurprisesView() }
             .navigationDestination(isPresented: $navigateToSpecialDays) { SpecialDaysView() }
             .navigationDestination(isPresented: $navigateToSecretVault) { SecretVaultView() }
-            .navigationDestination(isPresented: $navigateToLocation) { LiveLocationView() }
             
             // Hamburger Menu Sheet
             .sheet(isPresented: $showingMenu) {
@@ -224,8 +214,7 @@ struct HomeView: View {
                 navigateToMovies: $navigateToMovies,
                 navigateToSongs: $navigateToSongs,
                 navigateToPlaces: $navigateToPlaces,
-                navigateToSecretVault: $navigateToSecretVault,
-                navigateToLocation: $navigateToLocation
+                navigateToSecretVault: $navigateToSecretVault
             )
             .checkNavigationTriggersOnAppear(
                 router: navigationRouter,
@@ -236,8 +225,7 @@ struct HomeView: View {
                 navigateToMovies: $navigateToMovies,
                 navigateToSongs: $navigateToSongs,
                 navigateToPlaces: $navigateToPlaces,
-                navigateToSecretVault: $navigateToSecretVault,
-                navigateToLocation: $navigateToLocation
+                navigateToSecretVault: $navigateToSecretVault
             )
          
             

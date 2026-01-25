@@ -138,8 +138,8 @@ struct AddPlaceView: View {
                                         .padding(.vertical, 8)
                                         .padding(.horizontal, 12)
                                         .background(
-                                            selectedResult?.name == result.name ? 
-                                            themeManager.currentTheme.primaryColor.opacity(0.1) : 
+                                            selectedResult?.name == result.name ?
+                                            themeManager.currentTheme.primaryColor.opacity(0.1) :
                                             Color(.systemGray6)
                                         )
                                         .cornerRadius(8)
@@ -313,7 +313,7 @@ struct AddPlaceView: View {
                 // View açıldığında konum iznini kontrol et ve konumu al
                 if locationService.authorizationStatus == .notDetermined {
                     locationService.requestLocationPermission()
-                } else if locationService.authorizationStatus == .authorizedWhenInUse || 
+                } else if locationService.authorizationStatus == .authorizedWhenInUse ||
                           locationService.authorizationStatus == .authorizedAlways {
                     // Konum izni varsa konumu al
                     if locationService.currentLocation == nil {

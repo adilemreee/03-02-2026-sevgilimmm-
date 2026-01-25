@@ -12,7 +12,6 @@ import SwiftUI
 struct sevgilimWidgetBundle: WidgetBundle {
     var body: some Widget {
         sevgilimWidget()
-        PartnerLocationWidget()
         sevgilimWidgetControl()
         sevgilimWidgetLiveActivity()
     }

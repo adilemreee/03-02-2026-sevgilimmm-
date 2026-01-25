@@ -23,7 +23,6 @@ final class AppNavigationRouter: ObservableObject {
     @Published private(set) var placesTrigger: Int = 0
     @Published private(set) var secretVaultTrigger: Int = 0
     @Published private(set) var memoriesTrigger: Int = 0
-    @Published private(set) var locationTrigger: Int = 0
     
     /// Tab bar visibility control
     @Published var hideTabBar: Bool = false
@@ -92,12 +91,6 @@ final class AppNavigationRouter: ObservableObject {
     func openMemories() {
         DispatchQueue.main.async {
             self.memoriesTrigger &+= 1
-        }
-    }
-    
-    func openLocation() {
-        DispatchQueue.main.async {
-            self.locationTrigger &+= 1
         }
     }
 }

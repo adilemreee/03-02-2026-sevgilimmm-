@@ -23,8 +23,7 @@ extension View {
         navigateToSecretVault: Binding<Bool>? = nil,
         navigateToPhotos: Binding<Bool>? = nil,
         navigateToNotes: Binding<Bool>? = nil,
-        navigateToMemories: Binding<Bool>? = nil,
-        navigateToLocation: Binding<Bool>? = nil
+        navigateToMemories: Binding<Bool>? = nil
     ) -> some View {
         self
             .onChange(of: router.chatTrigger) { _, _ in
@@ -71,10 +70,6 @@ extension View {
                 if let tab = selectedTab { tab.wrappedValue = 1 }
                 navigateToMemories?.wrappedValue = true
             }
-            .onChange(of: router.locationTrigger) { _, _ in
-                if let tab = selectedTab { tab.wrappedValue = 0 }
-                navigateToLocation?.wrappedValue = true
-            }
     }
     
     /// Checks all navigation triggers on appear and sets initial navigation state
@@ -90,8 +85,7 @@ extension View {
         navigateToSecretVault: Binding<Bool>? = nil,
         navigateToPhotos: Binding<Bool>? = nil,
         navigateToNotes: Binding<Bool>? = nil,
-        navigateToMemories: Binding<Bool>? = nil,
-        navigateToLocation: Binding<Bool>? = nil
+        navigateToMemories: Binding<Bool>? = nil
     ) -> some View {
         self.onAppear {
             if router.chatTrigger > 0 { navigateToChat?.wrappedValue = true }
@@ -105,7 +99,6 @@ extension View {
             if router.photosTrigger > 0 { navigateToPhotos?.wrappedValue = true }
             if router.notesTrigger > 0 { navigateToNotes?.wrappedValue = true }
             if router.memoriesTrigger > 0 { navigateToMemories?.wrappedValue = true }
-            if router.locationTrigger > 0 { navigateToLocation?.wrappedValue = true }
         }
     }
 }
