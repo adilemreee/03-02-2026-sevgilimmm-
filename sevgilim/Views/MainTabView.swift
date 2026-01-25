@@ -92,6 +92,7 @@ struct MainTabView: View {
         .onChange(of: navigationRouter.photosTrigger) { _, _ in selectedTab = 2 }
         .onChange(of: navigationRouter.notesTrigger) { _, _ in selectedTab = 3 }
         .onChange(of: navigationRouter.memoriesTrigger) { _, _ in selectedTab = 1 }
+        .onChange(of: navigationRouter.locationTrigger) { _, _ in selectedTab = 0 }
     }
     
     private func startServices() {
@@ -125,6 +126,7 @@ struct MainTabView: View {
         if navigationRouter.photosTrigger > 0 { selectedTab = 2 }
         if navigationRouter.notesTrigger > 0 { selectedTab = 3 }
         if navigationRouter.memoriesTrigger > 0 { selectedTab = 1 }
+        if navigationRouter.locationTrigger > 0 { selectedTab = 0 }
     }
     
     // MARK: - ViewModel Factory

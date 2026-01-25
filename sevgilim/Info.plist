@@ -11,7 +11,11 @@
 	<key>NSCameraUsageDescription</key>
 	<string>Anılarınızı kaydetmek ve paylaşmak için kameranıza erişim izni gerekiyor.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Konumunuzu paylaşarak birlikte olduğunuz yerleri haritada görebilmeniz için konum izni gerekiyor.</string>
+	<string>Sevgilinizin konumunu görebilmek ve birlikte olduğunuz yerleri haritada görebilmeniz için konum izni gerekiyor.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Sevgilinizle buluştuğunuzda bildirim alabilmek için arka planda konum erişimi gerekiyor. Bu sayede buluştuğunuzda otomatik olarak haberdar olabilirsiniz.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>Sevgilinizle buluştuğunuzda bildirim alabilmek için arka planda konum erişimi gerekiyor.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Videolarınızda ses kaydı yapabilmek için mikrofon izni gerekiyor.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
@@ -19,6 +23,13 @@
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>
+		<string>location</string>
+		<string>fetch</string>
+	</array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.sevgilim.locationUpdate</string>
+		<string>com.sevgilim.meetingCheck</string>
 	</array>
 	<key>UILaunchScreen</key>
 	<dict>

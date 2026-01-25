@@ -35,6 +35,11 @@ final class AppDependencies: ObservableObject {
     lazy var secretVaultService = SecretVaultService()
     lazy var moodService = MoodService()
     
+    // MARK: - Location Services (Singleton)
+    var locationService: LocationService { LocationService.shared }
+    lazy var meetingService = MeetingService()
+    lazy var locationViewModel = LocationViewModel()
+    
     // MARK: - Convenience Accessors
     
     var currentUser: User? {
@@ -84,6 +89,10 @@ final class AppDependencies: ObservableObject {
         secretVaultService.listenToVault(relationshipId: relationshipId)
         moodService.listenToMoodStatuses(relationshipId: relationshipId)
         
+        // Location services - configure ile başlat
+        locationService.configure(userId: userId, relationshipId: relationshipId)
+        meetingService.configure(relationshipId: relationshipId)
+        
         print("🎬 All services started for relationship: \(relationshipId)")
     }
     
@@ -99,6 +108,9 @@ final class AppDependencies: ObservableObject {
         surpriseService.stopListening()
         storyService.stopListening()
         secretVaultService.stopListening()
+        
+        // Stop location services
+        locationService.stopSharingLocation()
         
         print("🛑 All services stopped")
     }

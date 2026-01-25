@@ -264,6 +264,8 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
             enqueueNavigation { $0.openSecretVault() }
         case "memory_new":
             enqueueNavigation { $0.openMemories() }
+        case "meeting_started", "meeting_notification":
+            enqueueNavigation { $0.openLocation() }
         default:
             break
         }
