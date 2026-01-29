@@ -17,11 +17,9 @@ class PhotoService: ObservableObject {
     private let photosLimit = 50 // Load first 50 photos for performance
     
     func listenToPhotos(relationshipId: String) {
+        // Remove existing listener before creating new one
         listener?.remove()
-        isLoading = true
-        
-        // Optimized query: limit results for faster loading
-        guard listener == nil else { return }
+        listener = nil
         
         isLoading = true
         
@@ -112,7 +110,12 @@ class PhotoService: ObservableObject {
     }
     
     func deletePhoto(_ photo: Photo) async throws {
-        guard let photoId = photo.id else { return }
+        guard let photoId = photo.id else {
+            print("❌ PhotoService.deletePhoto: photo.id is nil")
+            return
+        }
+        
+        print("🗑️ PhotoService: Deleting photo \(photoId) from Firestore")
         
         // Delete from storage (fire and forget for faster UX)
         Task.detached(priority: .background) {
@@ -126,12 +129,18 @@ class PhotoService: ObservableObject {
             }
             
             for url in urlsToDelete {
-                try? await StorageService.shared.deleteFile(at: url)
+                do {
+                    try await StorageService.shared.deleteFile(at: url)
+                    print("✅ Storage: Deleted \(url)")
+                } catch {
+                    print("⚠️ Storage delete error for \(url): \(error.localizedDescription)")
+                }
             }
         }
         
         // Delete from Firestore immediately
         try await db.collection("photos").document(photoId).delete()
+        print("✅ PhotoService: Firestore document deleted")
     }
     
     func stopListening() {

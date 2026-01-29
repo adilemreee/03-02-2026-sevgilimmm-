@@ -34,232 +34,51 @@ struct AddPlaceView: View {
     
     var body: some View {
         NavigationView {
-            Form {
-                Section("Yer Bilgileri") {
-                    // Search Field
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Yer Ara")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                        
-                        HStack {
-                            Image(systemName: "magnifyingglass")
-                                .foregroundColor(.secondary)
-                            
-                            TextField("Yer adı yazın...", text: $searchText)
-                                .textFieldStyle(PlainTextFieldStyle())
-                                .onChange(of: searchText) { _, newValue in
-                                    // Önceki arama task'ını iptal et
-                                    searchTask?.cancel()
-                                    
-                                    if !newValue.isEmpty {
-                                        // 0.3 saniye bekle, sonra ara (daha hızlı)
-                                        searchTask = Task {
-                                            try? await Task.sleep(nanoseconds: 300_000_000)
-                                            
-                                            if !Task.isCancelled {
-                                                await MainActor.run {
-                                                    searchPlaces(query: newValue)
-                                                }
-                                            }
-                                        }
-                                    } else {
-                                        searchResults = []
-                                        isSearching = false
-                                    }
-                                }
-                            
-                            // Clear button
-                            if !searchText.isEmpty {
-                                Button(action: {
-                                    searchText = ""
-                                    searchResults = []
-                                    isSearching = false
-                                    searchTask?.cancel()
-                                }) {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .foregroundColor(.secondary)
-                                }
-                                .buttonStyle(PlainButtonStyle())
-                            }
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(Color(.systemGray6))
-                        .cornerRadius(8)
-                        
-                        // Search Results
-                        if !searchResults.isEmpty {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Öneriler (\(searchResults.count))")
-                                    .font(.caption)
-                                    .fontWeight(.medium)
-                                    .foregroundColor(.secondary)
-                                    .padding(.horizontal, 4)
-                                
-                                ForEach(Array(searchResults.enumerated()), id: \.offset) { index, result in
-                                    Button(action: {
-                                        selectSearchResult(result)
-                                    }) {
-                                        HStack(spacing: 12) {
-                                            // Numara ikonu
-                                            ZStack {
-                                                Circle()
-                                                    .fill(themeManager.currentTheme.primaryColor.opacity(0.15))
-                                                    .frame(width: 24, height: 24)
-                                                
-                                                Text("\(index + 1)")
-                                                    .font(.caption)
-                                                    .fontWeight(.semibold)
-                                                    .foregroundColor(themeManager.currentTheme.primaryColor)
-                                            }
-                                            
-                                            VStack(alignment: .leading, spacing: 2) {
-                                                Text(result.name ?? "Bilinmeyen Yer")
-                                                    .font(.subheadline)
-                                                    .fontWeight(.medium)
-                                                    .foregroundColor(.primary)
-                                                    .lineLimit(1)
-                                                
-                                                if let address = result.placemark.title, !address.isEmpty {
-                                                    Text(address)
-                                                        .font(.caption)
-                                                        .foregroundColor(.secondary)
-                                                        .lineLimit(1)
-                                                }
-                                            }
-                                            
-                                            Spacer()
-                                            
-                                            Image(systemName: "chevron.right")
-                                                .font(.caption2)
-                                                .foregroundColor(.secondary)
-                                        }
-                                        .padding(.vertical, 8)
-                                        .padding(.horizontal, 12)
-                                        .background(
-                                            selectedResult?.name == result.name ?
-                                            themeManager.currentTheme.primaryColor.opacity(0.1) :
-                                            Color(.systemGray6)
-                                        )
-                                        .cornerRadius(8)
-                                    }
-                                    .buttonStyle(PlainButtonStyle())
-                                }
-                            }
-                            .padding(.top, 4)
-                        }
-                        
-                        if isSearching {
-                            HStack {
-                                ProgressView()
-                                    .scaleEffect(0.8)
-                                Text("Aranıyor...")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                            .padding(.top, 4)
-                        }
-                    }
-                    
-                    // Konum Seçme Butonları
-                    VStack(spacing: 12) {
-                        // Mevcut Konumu Kullan Butonu
-                        Button(action: {
-                            useCurrentLocation()
-                        }) {
-                            HStack {
-                                Image(systemName: "location.fill")
-                                    .foregroundColor(themeManager.currentTheme.primaryColor)
-                                
-                                if isGettingCurrentLocation {
-                                    ProgressView()
-                                        .scaleEffect(0.8)
-                                    Text("Konum alınıyor...")
-                                        .font(.subheadline)
-                                        .fontWeight(.medium)
-                                } else {
-                                    Text("Mevcut Konumu Kullan")
-                                        .font(.subheadline)
-                                        .fontWeight(.medium)
-                                }
-                                
-                                Spacer()
-                            }
-                            .padding(.vertical, 12)
-                            .padding(.horizontal, 16)
-                            .background(
-                                RoundedRectangle(cornerRadius: 10)
-                                    .fill(themeManager.currentTheme.primaryColor.opacity(0.1))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 10)
-                                            .stroke(themeManager.currentTheme.primaryColor.opacity(0.3), lineWidth: 1)
-                                    )
-                            )
-                        }
-                        .disabled(isGettingCurrentLocation)
-                        .buttonStyle(PlainButtonStyle())
-                        
-                        // Haritadan Seç Butonu
-                        Button(action: {
-                            showMapPicker = true
-                        }) {
-                            HStack {
-                                Image(systemName: "map.fill")
-                                    .foregroundColor(themeManager.currentTheme.primaryColor)
-                                
-                                Text("Haritadan Seç")
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                                
-                                Spacer()
-                            }
-                            .padding(.vertical, 12)
-                            .padding(.horizontal, 16)
-                            .background(
-                                RoundedRectangle(cornerRadius: 10)
-                                    .fill(themeManager.currentTheme.primaryColor.opacity(0.1))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 10)
-                                            .stroke(themeManager.currentTheme.primaryColor.opacity(0.3), lineWidth: 1)
-                                    )
-                            )
-                        }
-                        .buttonStyle(PlainButtonStyle())
-                    }
-                    
-                    // Manual Entry Fields
-                    TextField("Yer Adı", text: $placeName)
-                    TextField("Adres (isteğe bağlı)", text: $placeAddress)
-                    DatePicker("Tarih", selection: $date, displayedComponents: .date)
-                    .environment(\.locale, Locale(identifier: "tr_TR"))
-                }
+            ZStack {
+                // Gradient Background
+                LinearGradient(
+                    colors: [
+                        themeManager.currentTheme.primaryColor.opacity(0.25),
+                        themeManager.currentTheme.secondaryColor.opacity(0.18)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
                 
-                Section("Not") {
-                    TextField("Bu yer hakkında not ekleyin...", text: $note, axis: .vertical)
-                        .lineLimit(3...6)
-                }
-                
-                Section("Konum") {
-                    if latitude != 0 && longitude != 0 {
-                        HStack {
-                            Image(systemName: "location.fill")
-                                .foregroundColor(themeManager.currentTheme.primaryColor)
-                            Text("Konum seçildi")
-                                .foregroundColor(.secondary)
-                        }
-                    } else {
-                        Text("Yer arama sonucu seçin")
-                            .foregroundColor(.secondary)
+                ScrollView {
+                    VStack(spacing: 24) {
+                        // Header
+                        headerSection
+                        
+                        // Search Section
+                        searchSection
+                        
+                        // Location Buttons Section
+                        locationButtonsSection
+                        
+                        // Place Info Section
+                        placeInfoSection
+                        
+                        // Note Section
+                        noteSection
+                        
+                        // Location Status
+                        locationStatusSection
                     }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 24)
                 }
             }
-            .navigationTitle("Yer Ekle")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button("İptal") {
-                        dismiss()
+                    Button(action: { dismiss() }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left")
+                            Text("İptal")
+                        }
+                        .foregroundColor(themeManager.currentTheme.primaryColor)
                     }
                 }
                 
@@ -268,6 +87,7 @@ struct AddPlaceView: View {
                         addPlace()
                     }
                     .disabled(placeName.isEmpty || latitude == 0 || isAdding)
+                    .foregroundColor(placeName.isEmpty || latitude == 0 ? .secondary : themeManager.currentTheme.primaryColor)
                 }
             }
             .overlay {
@@ -283,8 +103,7 @@ struct AddPlaceView: View {
                                 .foregroundColor(.white)
                         }
                         .padding(30)
-                        .background(Color(.systemBackground))
-                        .cornerRadius(15)
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20))
                     }
                 }
             }
@@ -310,12 +129,10 @@ struct AddPlaceView: View {
                 )
             }
             .onAppear {
-                // View açıldığında konum iznini kontrol et ve konumu al
                 if locationService.authorizationStatus == .notDetermined {
                     locationService.requestLocationPermission()
                 } else if locationService.authorizationStatus == .authorizedWhenInUse ||
                           locationService.authorizationStatus == .authorizedAlways {
-                    // Konum izni varsa konumu al
                     if locationService.currentLocation == nil {
                         locationService.getCurrentLocation()
                     }
@@ -324,8 +141,417 @@ struct AddPlaceView: View {
         }
     }
     
+    // MARK: - Header Section
+    @ViewBuilder
+    private var headerSection: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "mappin.circle.fill")
+                .font(.system(size: 24))
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [.blue, .cyan],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Yeni Mekan")
+                    .font(.title3)
+                    .fontWeight(.bold)
+                
+                Text("Özel mekanlarınızı kaydedin")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            
+            Spacer()
+        }
+    }
+    
+    // MARK: - Search Section
+    @ViewBuilder
+    private var searchSection: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(spacing: 10) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(.blue)
+                Text("Yer Ara")
+                    .font(.headline)
+            }
+            
+            // Search Field
+            HStack(spacing: 12) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(.secondary)
+                
+                TextField("", text: $searchText, prompt: Text("Yer adı yazın..."))
+                    .textFieldStyle(.plain)
+                    .onChange(of: searchText) { _, newValue in
+                        searchTask?.cancel()
+                        
+                        if !newValue.isEmpty {
+                            searchTask = Task {
+                                try? await Task.sleep(nanoseconds: 300_000_000)
+                                
+                                if !Task.isCancelled {
+                                    await MainActor.run {
+                                        searchPlaces(query: newValue)
+                                    }
+                                }
+                            }
+                        } else {
+                            searchResults = []
+                            isSearching = false
+                        }
+                    }
+                
+                if !searchText.isEmpty {
+                    Button {
+                        searchText = ""
+                        searchResults = []
+                        isSearching = false
+                        searchTask?.cancel()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color(.systemBackground).opacity(0.94))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(themeManager.currentTheme.primaryColor.opacity(0.08), lineWidth: 1)
+            )
+            
+            // Search Status
+            if isSearching {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                    Text("Aranıyor...")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            
+            // Search Results
+            if !searchResults.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Öneriler (\(searchResults.count))")
+                        .font(.caption.weight(.medium))
+                        .foregroundColor(.secondary)
+                    
+                    ForEach(Array(searchResults.enumerated()), id: \.offset) { index, result in
+                        Button {
+                            selectSearchResult(result)
+                        } label: {
+                            HStack(spacing: 12) {
+                                ZStack {
+                                    Circle()
+                                        .fill(themeManager.currentTheme.primaryColor.opacity(0.15))
+                                        .frame(width: 28, height: 28)
+                                    
+                                    Text("\(index + 1)")
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundColor(themeManager.currentTheme.primaryColor)
+                                }
+                                
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(result.name ?? "Bilinmeyen Yer")
+                                        .font(.subheadline.weight(.medium))
+                                        .foregroundColor(.primary)
+                                        .lineLimit(1)
+                                    
+                                    if let address = result.placemark.title, !address.isEmpty {
+                                        Text(address)
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                            .lineLimit(1)
+                                    }
+                                }
+                                
+                                Spacer()
+                                
+                                Image(systemName: "chevron.right")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(.vertical, 10)
+                            .padding(.horizontal, 14)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(selectedResult?.name == result.name ?
+                                          themeManager.currentTheme.primaryColor.opacity(0.1) :
+                                          Color(.systemBackground).opacity(0.7))
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .shadow(color: .black.opacity(0.08), radius: 16, x: 0, y: 10)
+    }
+    
+    // MARK: - Location Buttons Section
+    @ViewBuilder
+    private var locationButtonsSection: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("Konum Seçimi")
+                .font(.headline)
+            
+            VStack(spacing: 12) {
+                // Current Location Button
+                Button {
+                    useCurrentLocation()
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "location.fill")
+                            .font(.title3)
+                            .foregroundColor(.white)
+                            .frame(width: 40, height: 40)
+                            .background(
+                                LinearGradient(
+                                    colors: [.blue, .cyan],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                        
+                        VStack(alignment: .leading, spacing: 2) {
+                            if isGettingCurrentLocation {
+                                HStack(spacing: 8) {
+                                    ProgressView()
+                                        .scaleEffect(0.8)
+                                    Text("Konum alınıyor...")
+                                        .font(.subheadline.weight(.medium))
+                                }
+                            } else {
+                                Text("Mevcut Konumu Kullan")
+                                    .font(.subheadline.weight(.medium))
+                                    .foregroundColor(.primary)
+                                Text("GPS ile konumunuzu tespit edin")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        
+                        Spacer()
+                        
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(14)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(Color(.systemBackground).opacity(0.7))
+                    )
+                }
+                .disabled(isGettingCurrentLocation)
+                .buttonStyle(.plain)
+                
+                // Map Picker Button
+                Button {
+                    showMapPicker = true
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "map.fill")
+                            .font(.title3)
+                            .foregroundColor(.white)
+                            .frame(width: 40, height: 40)
+                            .background(
+                                LinearGradient(
+                                    colors: [themeManager.currentTheme.primaryColor, themeManager.currentTheme.secondaryColor],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                        
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Haritadan Seç")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundColor(.primary)
+                            Text("Harita üzerinde konum seçin")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        Spacer()
+                        
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(14)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(Color(.systemBackground).opacity(0.7))
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .shadow(color: .black.opacity(0.08), radius: 16, x: 0, y: 10)
+    }
+    
+    // MARK: - Place Info Section
+    @ViewBuilder
+    private var placeInfoSection: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("Mekan Bilgileri")
+                .font(.headline)
+            
+            VStack(alignment: .leading, spacing: 12) {
+                fieldLabel("Yer Adı")
+                TextField("", text: $placeName, prompt: Text("Mekan adını girin"))
+                    .textFieldStyle(.plain)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(Color(.systemBackground).opacity(0.94))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(themeManager.currentTheme.primaryColor.opacity(0.08), lineWidth: 1)
+                    )
+            }
+            
+            VStack(alignment: .leading, spacing: 12) {
+                fieldLabel("Adres (isteğe bağlı)")
+                TextField("", text: $placeAddress, prompt: Text("Adres bilgisi"))
+                    .textFieldStyle(.plain)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(Color(.systemBackground).opacity(0.94))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(themeManager.currentTheme.primaryColor.opacity(0.08), lineWidth: 1)
+                    )
+            }
+            
+            VStack(alignment: .leading, spacing: 12) {
+                fieldLabel("Ziyaret Tarihi")
+                HStack(spacing: 12) {
+                    Image(systemName: "calendar")
+                        .foregroundColor(themeManager.currentTheme.primaryColor)
+                    DatePicker("", selection: $date, displayedComponents: .date)
+                        .labelsHidden()
+                        .environment(\.locale, Locale(identifier: "tr_TR"))
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Color(.systemBackground).opacity(0.94))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(themeManager.currentTheme.primaryColor.opacity(0.08), lineWidth: 1)
+                )
+            }
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .shadow(color: .black.opacity(0.08), radius: 16, x: 0, y: 10)
+    }
+    
+    // MARK: - Note Section
+    @ViewBuilder
+    private var noteSection: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("Not")
+                .font(.headline)
+            
+            ZStack(alignment: .topLeading) {
+                if note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text("Bu yer hakkında notlarınız...")
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 16)
+                }
+                
+                TextEditor(text: $note)
+                    .scrollContentBackground(.hidden)
+                    .frame(minHeight: 80)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+            }
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color(.systemBackground).opacity(0.94))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(themeManager.currentTheme.primaryColor.opacity(0.08), lineWidth: 1)
+            )
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .shadow(color: .black.opacity(0.08), radius: 16, x: 0, y: 10)
+    }
+    
+    // MARK: - Location Status Section
+    @ViewBuilder
+    private var locationStatusSection: some View {
+        if latitude != 0 && longitude != 0 {
+            HStack(spacing: 12) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.title2)
+                    .foregroundColor(.green)
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Konum Seçildi")
+                        .font(.subheadline.weight(.medium))
+                    Text(String(format: "%.4f, %.4f", latitude, longitude))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+            }
+            .padding(16)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color.green.opacity(0.1))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(Color.green.opacity(0.3), lineWidth: 1)
+            )
+        }
+    }
+    
+    // MARK: - Helper Views
+    private func fieldLabel(_ text: String) -> some View {
+        Text(text.uppercased())
+            .font(.caption.weight(.semibold))
+            .foregroundColor(.secondary)
+            .kerning(0.5)
+    }
+    
+    // MARK: - Functions
     private func searchPlaces(query: String) {
-        // Minimum 2 karakter kontrolü
         guard query.count >= 2 else {
             searchResults = []
             return
@@ -336,16 +562,13 @@ struct AddPlaceView: View {
         let searchRequest = MKLocalSearch.Request()
         searchRequest.naturalLanguageQuery = query
         
-        // Kullanıcının konumuna göre ara
         if let userLocation = locationService.currentLocation {
-            // Kullanıcının konumunu merkez al (30km yarıçap)
             searchRequest.region = MKCoordinateRegion(
                 center: userLocation.coordinate,
                 latitudinalMeters: 30000,
                 longitudinalMeters: 30000
             )
         } else {
-            // Konum yoksa Türkiye genelinde ara
             searchRequest.region = MKCoordinateRegion(
                 center: CLLocationCoordinate2D(latitude: 39.9334, longitude: 32.8597),
                 span: MKCoordinateSpan(latitudeDelta: 5.0, longitudeDelta: 5.0)
@@ -367,13 +590,11 @@ struct AddPlaceView: View {
                     return
                 }
                 
-                // Sonuçları filtrele
                 var filteredResults = response.mapItems.filter { mapItem in
                     guard let name = mapItem.name, !name.isEmpty else { return false }
                     return true
                 }
                 
-                // Kullanıcının konumuna göre sırala (en yakından en uzağa)
                 if let userLocation = self.locationService.currentLocation {
                     filteredResults.sort { item1, item2 in
                         guard let loc1 = item1.placemark.location,
@@ -388,9 +609,7 @@ struct AddPlaceView: View {
                     }
                 }
                 
-                // En fazla 10 sonuç göster
                 let limitedResults = Array(filteredResults.prefix(10))
-                
                 print("✅ Found \(limitedResults.count) places for query: '\(query)'")
                 self.searchResults = limitedResults
             }
@@ -404,26 +623,22 @@ struct AddPlaceView: View {
         latitude = result.placemark.location?.coordinate.latitude ?? 0
         longitude = result.placemark.location?.coordinate.longitude ?? 0
         
-        // Arama state'ini tamamen temizle
         searchText = ""
         searchResults = []
         isSearching = false
         searchTask?.cancel()
         searchTask = nil
         
-        // Keyboard'u kapat
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
     
     private func useCurrentLocation() {
-        // Önce konum izni kontrol et
         if locationService.authorizationStatus == .notDetermined {
             locationService.requestLocationPermission()
             return
         }
         
         guard locationService.authorizationStatus == .authorizedWhenInUse || locationService.authorizationStatus == .authorizedAlways else {
-            // İzin verilmemiş, kullanıcıyı uyar
             locationAlertMessage = "Konum izni verilmedi. Lütfen ayarlardan konum iznini açın."
             showLocationAlert = true
             return
@@ -436,17 +651,13 @@ struct AddPlaceView: View {
         }
         
         isGettingCurrentLocation = true
-        
-        // Mevcut konumu al
         locationService.getCurrentLocation()
         
-        // Konum alındığında işle
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
             if let location = self.locationService.currentLocation {
                 self.latitude = location.coordinate.latitude
                 self.longitude = location.coordinate.longitude
                 
-                // Yer adını ve adresini al
                 self.locationService.getPlaceName(for: location) { placeName, address in
                     DispatchQueue.main.async {
                         if let placeName = placeName {
@@ -517,7 +728,6 @@ struct MapPickerView: View {
     var body: some View {
         NavigationView {
             ZStack {
-                // Apple Maps benzeri interaktif harita
                 InteractiveMapView(
                     selectedCoordinate: $selectedCoordinate,
                     centerOnCoordinate: $centerOnCoordinate,
@@ -525,9 +735,7 @@ struct MapPickerView: View {
                 )
                 .ignoresSafeArea()
                 
-                // Üst bilgi ve kontroller
                 VStack {
-                    // Üst bar
                     HStack {
                         Button(action: { dismiss() }) {
                             HStack(spacing: 6) {
@@ -545,7 +753,6 @@ struct MapPickerView: View {
                         
                         Spacer()
                         
-                        // Mevcut konuma git butonu
                         Button(action: {
                             if let userLocation = locationService.currentLocation {
                                 centerOnCoordinate = userLocation.coordinate
@@ -565,9 +772,7 @@ struct MapPickerView: View {
                     
                     Spacer()
                     
-                    // Alt bilgi ve seçim kartı
                     VStack(spacing: 0) {
-                        // İpucu
                         if selectedCoordinate == nil {
                             HStack(spacing: 10) {
                                 Image(systemName: "hand.tap.fill")
@@ -586,7 +791,6 @@ struct MapPickerView: View {
                             .padding(.bottom, 8)
                         }
                         
-                        // Seçim kartı
                         if let coordinate = selectedCoordinate {
                             VStack(spacing: 16) {
                                 HStack {
@@ -614,7 +818,6 @@ struct MapPickerView: View {
                                     }
                                 }
                                 
-                                // Seç butonu
                                 Button(action: {
                                     selectLocation(coordinate)
                                 }) {
@@ -649,7 +852,6 @@ struct MapPickerView: View {
         latitude = coordinate.latitude
         longitude = coordinate.longitude
         
-        // Seçilen konumun adresini al
         let location = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
         locationService.getPlaceName(for: location) { name, address in
             if let name = name {
@@ -660,7 +862,6 @@ struct MapPickerView: View {
             }
         }
         
-        // Modal'ı kapat
         showMapPicker = false
     }
 }
@@ -676,12 +877,9 @@ struct InteractiveMapView: UIViewRepresentable {
         mapView.delegate = context.coordinator
         mapView.showsUserLocation = true
         mapView.mapType = .standard
-        
-        // Harita tipini standard yap (Apple Maps benzeri)
         mapView.showsCompass = true
         mapView.showsScale = true
         
-        // Başlangıç konumunu ayarla
         let region = MKCoordinateRegion(
             center: initialCoordinate,
             latitudinalMeters: 5000,
@@ -689,7 +887,6 @@ struct InteractiveMapView: UIViewRepresentable {
         )
         mapView.setRegion(region, animated: false)
         
-        // Long press gesture ekle (Apple Maps gibi)
         let longPress = UILongPressGestureRecognizer(
             target: context.coordinator,
             action: #selector(Coordinator.handleLongPress(_:))
@@ -701,7 +898,6 @@ struct InteractiveMapView: UIViewRepresentable {
     }
     
     func updateUIView(_ mapView: MKMapView, context: Context) {
-        // Pin'i güncelle
         mapView.removeAnnotations(mapView.annotations.filter { !($0 is MKUserLocation) })
         
         if let coordinate = selectedCoordinate {
@@ -711,7 +907,6 @@ struct InteractiveMapView: UIViewRepresentable {
             mapView.addAnnotation(annotation)
         }
         
-        // Merkez koordinat değiştiyse haritayı kaydır
         if let centerCoordinate = centerOnCoordinate {
             let region = MKCoordinateRegion(
                 center: centerCoordinate,
@@ -720,7 +915,6 @@ struct InteractiveMapView: UIViewRepresentable {
             )
             mapView.setRegion(region, animated: true)
             
-            // Koordinatı sıfırla (tekrar tetiklenmesin)
             DispatchQueue.main.async {
                 self.centerOnCoordinate = nil
             }
@@ -745,17 +939,14 @@ struct InteractiveMapView: UIViewRepresentable {
             let locationInView = gesture.location(in: mapView)
             let coordinate = mapView.convert(locationInView, toCoordinateFrom: mapView)
             
-            // Hafif titreşim (haptic feedback)
             let generator = UIImpactFeedbackGenerator(style: .medium)
             generator.impactOccurred()
             
-            // Koordinatı güncelle
             DispatchQueue.main.async {
                 self.parent.selectedCoordinate = coordinate
             }
         }
         
-        // Pin görünümünü özelleştir (Apple Maps benzeri)
         func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
             guard !(annotation is MKUserLocation) else { return nil }
             
@@ -769,7 +960,6 @@ struct InteractiveMapView: UIViewRepresentable {
                 annotationView?.annotation = annotation
             }
             
-            // Kırmızı pin (Apple Maps benzeri)
             annotationView?.markerTintColor = .systemRed
             annotationView?.glyphImage = UIImage(systemName: "mappin")
             annotationView?.animatesWhenAdded = true

@@ -256,12 +256,18 @@ struct FullScreenPhotoViewer: View {
     }
     
     private func deleteCurrentPhoto() {
-        guard let photo = currentPhoto else { return }
+        guard let photo = currentPhoto else {
+            print("❌ Delete failed: No current photo")
+            return
+        }
+        print("🗑️ Starting delete for photo: \(photo.id ?? "unknown")")
         Task {
             do {
                 try await photoService.deletePhoto(photo)
+                print("✅ Photo deleted successfully")
                 await MainActor.run {
                     let updatedCount = photoService.photos.count
+                    print("📊 Updated count: \(updatedCount)")
                     if updatedCount == 0 {
                         closeViewer()
                     } else {

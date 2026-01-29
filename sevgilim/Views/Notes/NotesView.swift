@@ -328,6 +328,7 @@ struct AddNoteView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var noteService: NoteService
     @EnvironmentObject var authService: AuthenticationService
+    @EnvironmentObject var themeManager: ThemeManager
     
     @State private var title = ""
     @State private var content = ""
@@ -335,30 +336,168 @@ struct AddNoteView: View {
     
     var body: some View {
         NavigationView {
-            Form {
-                Section("Başlık") {
-                    TextField("Not başlığı", text: $title)
-                }
+            ZStack {
+                // Gradient Background
+                LinearGradient(
+                    colors: [
+                        themeManager.currentTheme.primaryColor.opacity(0.25),
+                        themeManager.currentTheme.secondaryColor.opacity(0.18)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
                 
-                Section("İçerik") {
-                    TextEditor(text: $content)
-                        .frame(minHeight: 300)
+                ScrollView {
+                    VStack(spacing: 24) {
+                        // Header
+                        HStack(spacing: 12) {
+                            Image(systemName: "note.text.badge.plus")
+                                .font(.system(size: 24))
+                                .foregroundStyle(
+                                    LinearGradient(
+                                        colors: [.orange, .yellow],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Yeni Not")
+                                    .font(.title3)
+                                    .fontWeight(.bold)
+                                
+                                Text("Birlikte not tutun")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            
+                            Spacer()
+                        }
+                        
+                        // Title Section
+                        VStack(alignment: .leading, spacing: 18) {
+                            Text("BAŞLIK")
+                                .font(.caption.weight(.semibold))
+                                .foregroundColor(.secondary)
+                                .kerning(0.5)
+                            
+                            TextField("", text: $title, prompt: Text("Not başlığı..."))
+                                .textFieldStyle(.plain)
+                                .font(.body)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 14)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                        .fill(Color(.systemBackground).opacity(0.94))
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                        .stroke(themeManager.currentTheme.primaryColor.opacity(0.08), lineWidth: 1)
+                                )
+                        }
+                        .padding(20)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                        .shadow(color: .black.opacity(0.08), radius: 16, x: 0, y: 10)
+                        
+                        // Content Section
+                        VStack(alignment: .leading, spacing: 18) {
+                            Text("İÇERİK")
+                                .font(.caption.weight(.semibold))
+                                .foregroundColor(.secondary)
+                                .kerning(0.5)
+                            
+                            ZStack(alignment: .topLeading) {
+                                if content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                    Text("Notunuzu buraya yazın...")
+                                        .foregroundColor(.secondary)
+                                        .padding(.horizontal, 18)
+                                        .padding(.vertical, 16)
+                                }
+                                
+                                TextEditor(text: $content)
+                                    .scrollContentBackground(.hidden)
+                                    .frame(minHeight: 250)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 10)
+                            }
+                            .background(
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .fill(Color(.systemBackground).opacity(0.94))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .stroke(themeManager.currentTheme.primaryColor.opacity(0.08), lineWidth: 1)
+                            )
+                        }
+                        .padding(20)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                        .shadow(color: .black.opacity(0.08), radius: 16, x: 0, y: 10)
+                        
+                        // Save Button
+                        Button(action: saveNote) {
+                            HStack {
+                                if isSaving {
+                                    ProgressView()
+                                        .tint(.white)
+                                } else {
+                                    Image(systemName: "checkmark.circle.fill")
+                                    Text("Kaydet")
+                                }
+                            }
+                            .frame(maxWidth: .infinity)
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .padding(.vertical, 16)
+                            .background(
+                                LinearGradient(
+                                    colors: [
+                                        themeManager.currentTheme.primaryColor,
+                                        themeManager.currentTheme.secondaryColor
+                                    ],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .shadow(color: themeManager.currentTheme.primaryColor.opacity(0.3), radius: 10, x: 0, y: 5)
+                        }
+                        .disabled(title.isEmpty || content.isEmpty || isSaving)
+                        .opacity((title.isEmpty || content.isEmpty) ? 0.5 : 1.0)
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 24)
                 }
             }
-            .navigationTitle("Yeni Not")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button("İptal") {
-                        dismiss()
+                    Button(action: { dismiss() }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left")
+                            Text("İptal")
+                        }
+                        .foregroundColor(themeManager.currentTheme.primaryColor)
                     }
                 }
-                
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Kaydet") {
-                        saveNote()
+            }
+            .overlay {
+                if isSaving {
+                    ZStack {
+                        Color.black.opacity(0.3)
+                            .ignoresSafeArea()
+                        
+                        VStack(spacing: 15) {
+                            ProgressView()
+                                .scaleEffect(1.5)
+                            Text("Kaydediliyor...")
+                                .foregroundColor(.white)
+                        }
+                        .padding(30)
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20))
                     }
-                    .disabled(title.isEmpty || content.isEmpty || isSaving)
                 }
             }
         }
