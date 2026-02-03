@@ -311,6 +311,46 @@ struct StoryViewer: View {
                             }
                             .padding(.horizontal, 16)
                             .padding(.bottom, 20) // SafeArea için daha az padding
+                        } else {
+                            // Kendi Story'miz için Footer (Görüldü Göstergesi)
+                            HStack(spacing: 16) {
+                                // Görülme Durumu Göstergesi
+                                let partnerId = storyService.partnerStories.first?.createdBy ?? ""
+                                HStack(spacing: 6) {
+                                    Image(systemName: story.isViewedByPartner(partnerId: partnerId) ? "eye.fill" : "eye.slash")
+                                        .font(.system(size: 18))
+                                        .foregroundColor(story.isViewedByPartner(partnerId: partnerId) ? .white : .white.opacity(0.5))
+                                    
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        if story.isViewedByPartner(partnerId: partnerId) {
+                                            if let viewTime = story.viewedAtTime(userId: partnerId) {
+                                                Text("Görüldü")
+                                                    .font(.system(size: 14, weight: .medium))
+                                                    .foregroundColor(.white)
+                                                Text(viewTime.timeAgoShort + " önce")
+                                                    .font(.system(size: 11))
+                                                    .foregroundColor(.white.opacity(0.7))
+                                            } else {
+                                                Text("Görüldü")
+                                                    .font(.system(size: 14, weight: .medium))
+                                                    .foregroundColor(.white)
+                                            }
+                                        } else {
+                                            Text("Henüz görülmedi")
+                                                .font(.system(size: 14))
+                                                .foregroundColor(.white.opacity(0.6))
+                                        }
+                                    }
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 10)
+                                .background(.ultraThinMaterial)
+                                .cornerRadius(20)
+                                
+                                Spacer()
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 20)
                         }
                     }
                     .zIndex(1)

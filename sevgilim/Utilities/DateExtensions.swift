@@ -34,6 +34,23 @@ extension Date {
         return "Az önce"
     }
     
+    // Kısa zaman metni (story görülme durumu için)
+    var timeAgoShort: String {
+        let calendar = Calendar.current
+        let now = Date()
+        let components = calendar.dateComponents([.hour, .minute], from: self, to: now)
+        
+        if let hour = components.hour, hour > 0 {
+            return "\(hour)s"
+        }
+        
+        if let minute = components.minute, minute > 0 {
+            return "\(minute)dk"
+        }
+        
+        return "şimdi"
+    }
+    
     func daysBetween(_ endDate: Date) -> Int {
         let calendar = Calendar.current
         let components = calendar.dateComponents([.day], from: self, to: endDate)

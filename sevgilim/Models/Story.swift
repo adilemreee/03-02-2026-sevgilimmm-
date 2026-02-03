@@ -23,6 +23,7 @@ struct Story: Identifiable, Codable {
     let relationshipId: String
     let createdAt: Date
     var viewedBy: [String] // userId array
+    var viewedAt: [String: Date] // userId -> görüntüleme zamanı (Instagram-style tracking)
     var likedBy: [String]? // userId array - kim beğendi (optional - eski story'ler için)
     var likeTimestamps: [String: Date] // userId -> beğeni zamanı
     
@@ -42,11 +43,12 @@ struct Story: Identifiable, Codable {
         case relationshipId
         case createdAt
         case viewedBy
+        case viewedAt
         case likedBy
         case likeTimestamps
     }
     
-    // Codable init - likedBy yoksa boş array yap
+    // Codable init - backward compat için optional decode
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         _id = try container.decode(DocumentID<String>.self, forKey: .id)
@@ -60,12 +62,13 @@ struct Story: Identifiable, Codable {
         relationshipId = try container.decode(String.self, forKey: .relationshipId)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         viewedBy = try container.decode([String].self, forKey: .viewedBy)
+        viewedAt = try container.decodeIfPresent([String: Date].self, forKey: .viewedAt) ?? [:]
         likedBy = try container.decodeIfPresent([String].self, forKey: .likedBy) ?? []
         likeTimestamps = try container.decodeIfPresent([String: Date].self, forKey: .likeTimestamps) ?? [:]
     }
     
     // Normal init
-    init(photoURL: String, thumbnailURL: String?, mediaType: StoryMediaType, duration: Double?, createdBy: String, createdByName: String, createdByPhotoURL: String?, relationshipId: String, createdAt: Date, viewedBy: [String], likedBy: [String]?, likeTimestamps: [String: Date] = [:]) {
+    init(photoURL: String, thumbnailURL: String?, mediaType: StoryMediaType, duration: Double?, createdBy: String, createdByName: String, createdByPhotoURL: String?, relationshipId: String, createdAt: Date, viewedBy: [String], viewedAt: [String: Date] = [:], likedBy: [String]?, likeTimestamps: [String: Date] = [:]) {
         self.photoURL = photoURL
         self.thumbnailURL = thumbnailURL
         self.mediaType = mediaType
@@ -76,6 +79,7 @@ struct Story: Identifiable, Codable {
         self.relationshipId = relationshipId
         self.createdAt = createdAt
         self.viewedBy = viewedBy
+        self.viewedAt = viewedAt
         self.likedBy = likedBy ?? []
         self.likeTimestamps = likeTimestamps
     }
@@ -124,6 +128,28 @@ struct Story: Identifiable, Codable {
     // Bu user story'yi gördü mü?
     func isViewedBy(userId: String) -> Bool {
         return viewedBy.contains(userId)
+    }
+    
+    // Partner hikayeyi gördü mü? (kendi story'leri için)
+    func isViewedByPartner(partnerId: String) -> Bool {
+        return viewedBy.contains(partnerId)
+    }
+    
+    // Kullanıcının görüntüleme zamanı
+    func viewedAtTime(userId: String) -> Date? {
+        return viewedAt[userId]
+    }
+    
+    // Görülme durumu metni (kendi story'leri için)
+    func viewStatusText(for partnerId: String) -> String {
+        if let viewTime = viewedAt[partnerId] {
+            return "Görüldü • \(viewTime.timeAgoShort)"
+        } else if viewedBy.contains(partnerId) {
+            // Eski story'ler için (viewedAt yok ama viewedBy var)
+            return "Görüldü"
+        } else {
+            return "Henüz görülmedi"
+        }
     }
     
     // Bu user story'yi beğendi mi?

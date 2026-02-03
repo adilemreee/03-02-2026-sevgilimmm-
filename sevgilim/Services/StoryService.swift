@@ -44,10 +44,12 @@ class StoryService: ObservableObject {
                     }
                 }
                 
-                // Süresi dolmuşları sil (background task)
+                // Süresi dolmuş story'leri sil
                 for story in fetchedStories where story.isExpired {
-                    Task {
-                        try? await self.deleteStory(storyId: story.id ?? "")
+                    if let storyId = story.id {
+                        Task {
+                            try? await self.deleteStory(storyId: storyId)
+                        }
                     }
                 }
                 
@@ -108,6 +110,7 @@ class StoryService: ObservableObject {
                 relationshipId: relationshipId,
                 createdAt: Date(),
                 viewedBy: [userId], // Oluşturan kişi otomatik görülmüş sayılır
+                viewedAt: [userId: Date()], // Oluşturan kişinin görüntüleme zamanı
                 likedBy: [], // Başlangıçta beğeni yok
                 likeTimestamps: [:]
             )
@@ -126,6 +129,7 @@ class StoryService: ObservableObject {
                 relationshipId: relationshipId,
                 createdAt: Date(),
                 viewedBy: [userId],
+                viewedAt: [userId: Date()],
                 likedBy: [],
                 likeTimestamps: [:]
             )
@@ -278,9 +282,10 @@ class StoryService: ObservableObject {
     func markStoryAsViewed(storyId: String, userId: String) async throws {
         let storyRef = db.collection("stories").document(storyId)
         
-        // viewedBy array'ine ekle (duplicate kontrolü Firestore'da)
+        // viewedBy array'ine ekle ve viewedAt timestamp kaydet
         try await storyRef.updateData([
-            "viewedBy": FieldValue.arrayUnion([userId])
+            "viewedBy": FieldValue.arrayUnion([userId]),
+            "viewedAt.\(userId)": Timestamp(date: Date())
         ])
     }
     
@@ -307,6 +312,12 @@ class StoryService: ObservableObject {
         
         // Firestore'dan sil
         try await storyRef.delete()
+        
+        // UI'ı hemen güncelle - local array'den de sil
+        await MainActor.run {
+            self.userStories.removeAll { $0.id == storyId }
+            self.partnerStories.removeAll { $0.id == storyId }
+        }
     }
     
     // Kullanıcının story'sini sil
