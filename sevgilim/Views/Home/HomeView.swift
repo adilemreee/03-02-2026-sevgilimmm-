@@ -15,7 +15,7 @@ struct HomeView: View {
     @EnvironmentObject private var greetingService: GreetingService
     @EnvironmentObject private var navigationRouter: AppNavigationRouter
     @EnvironmentObject private var proximityService: ProximityService
-    @EnvironmentObject private var spotifyNowPlayingService: SpotifyNowPlayingService
+
     
     // MARK: - View Model
     @StateObject private var viewModel: HomeViewModel
@@ -37,7 +37,7 @@ struct HomeView: View {
     @State private var showingNotifications = false
     @State private var navigateToSecretVault = false
     @State private var isUpdatingMood = false
-    @State private var showingShareNowPlaying = false
+
     
     let timer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
     
@@ -65,31 +65,7 @@ struct HomeView: View {
                             StoryCircles()
                                 .padding(.horizontal, 20)
                             
-                            // Partner Spotify Now Playing Card
-                            if let partnerNowPlaying = spotifyNowPlayingService.partnerNowPlaying {
-                                SpotifyNowPlayingCard(
-                                    nowPlaying: partnerNowPlaying,
-                                    partnerName: currentUser.id.map { relationship.partnerName(for: $0) } ?? "Sevgilin",
-                                    theme: themeManager.currentTheme,
-                                    onTap: {
-                                        if let spotifyUrl = partnerNowPlaying.spotifyUrl,
-                                           let url = URL(string: spotifyUrl) {
-                                            UIApplication.shared.open(url)
-                                        }
-                                    }
-                                )
-                                .transition(.asymmetric(
-                                    insertion: .move(edge: .top).combined(with: .opacity),
-                                    removal: .move(edge: .top).combined(with: .opacity)
-                                ))
-                                .animation(.spring(response: 0.5, dampingFraction: 0.8), value: spotifyNowPlayingService.partnerNowPlaying != nil)
-                            }
-                            
-                            // Share Now Playing Button (kullanıcı şarkı paylaşabilir)
-                            ShareNowPlayingButton {
-                                showingShareNowPlaying = true
-                            }
-                            
+                      
                             // Dynamic Greeting (time-based)
                             if greetingService.shouldShowGreeting {
                                 GreetingCard()
@@ -241,11 +217,7 @@ struct HomeView: View {
                     .presentationDetents([.medium, .large])
                     .presentationDragIndicator(.visible)
             }
-            .sheet(isPresented: $showingShareNowPlaying) {
-                ShareNowPlayingView()
-                    .presentationDetents([.large])
-                    .presentationDragIndicator(.visible)
-            }
+         
             .handleNavigationTriggers(
                 router: navigationRouter,
                 navigateToChat: $navigateToChat,
