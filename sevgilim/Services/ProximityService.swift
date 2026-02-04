@@ -21,6 +21,7 @@ class ProximityService: NSObject, ObservableObject, CLLocationManagerDelegate {
     @Published var isNearby: Bool = false
     @Published var isTrackingEnabled: Bool = false
     @Published var lastNotificationTime: Date?
+    @Published var lastPartnerUpdateTime: Date?
     
     // MARK: - Settings (UserDefaults backed)
     @Published var proximityThreshold: Double {
@@ -288,12 +289,12 @@ class ProximityService: NSObject, ObservableObject, CLLocationManagerDelegate {
     
     private func formatDistanceMessage(_ distance: Double) -> String {
         if distance < 100 {
-            return "Partneriniz çok yakınında! 💑"
+            return "Aşkının kollarındasın... 💑"
         } else if distance < 500 {
-            return "Partneriniz yaklaşık \(Int(distance)) metre uzaklıkta"
+            return "Aşkın yaklaşık \(Int(distance)) metre uzaklıkta"
         } else {
             let km = distance / 1000
-            return String(format: "Partneriniz yaklaşık %.1f km uzaklıkta", km)
+            return String(format: "Aşkın yaklaşık %.1f km uzaklıkta", km)
         }
     }
     

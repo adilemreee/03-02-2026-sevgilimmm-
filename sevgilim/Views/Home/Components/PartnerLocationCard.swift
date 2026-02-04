@@ -19,7 +19,7 @@ struct PartnerLocationCard: View {
                     .font(.caption)
                     .foregroundColor(.white.opacity(0.8))
                 
-                Text("Partner Konumu")
+                Text("Aşkımınn Konumu")
                     .font(.subheadline)
                     .foregroundColor(.white.opacity(0.8))
             }
@@ -37,7 +37,7 @@ struct PartnerLocationCard: View {
                             Image(systemName: "heart.fill")
                                 .foregroundColor(.red)
                                 .font(.caption)
-                            Text("Çok Yakınınızda!")
+                            Text("Aşkının Kollarının Arasındasınnn🧡")
                                 .font(.callout.bold())
                                 .foregroundColor(.white)
                         }
@@ -46,6 +46,16 @@ struct PartnerLocationCard: View {
                             .font(.callout.bold())
                             .foregroundColor(.white.opacity(0.8))
                     }
+                    
+                    // Last update time
+                    if let lastUpdate = proximityService.lastPartnerUpdateTime {
+                        Text("Son güncelleme: \(lastUpdate, style: .relative) önce")
+                            .font(.caption2)
+                            .foregroundColor(.white.opacity(0.5))
+                            .padding(.top, 4)
+                            .environment(\.locale, Locale(identifier: "tr_TR"))
+                    }
+                    
                 } else {
                     // Calculating or No Data
                     VStack(spacing: 8) {
