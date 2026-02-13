@@ -187,17 +187,9 @@ class ProximityService: NSObject, ObservableObject, CLLocationManagerDelegate {
                       let longitude = data["longitude"] as? Double else {
                     return
                 }
-                // Extract timestamp from Firebase
-                let timestamp: Date?
-                if let ts = data["timestamp"] as? Timestamp {
-                    timestamp = ts.dateValue()
-                } else {
-                    timestamp = nil
-                }
                 
                 Task { @MainActor in
                     self.partnerLocation = CLLocation(latitude: latitude, longitude: longitude)
-                    self.lastPartnerUpdateTime = timestamp
                     self.checkProximity()
                 }
             }
