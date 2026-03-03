@@ -9,6 +9,7 @@ struct StoryCircles: View {
     @EnvironmentObject var storyService: StoryService
     @EnvironmentObject var authService: AuthenticationService
     @EnvironmentObject var themeManager: ThemeManager
+    @EnvironmentObject var relationshipService: RelationshipService
     
     @State private var storyPresentation: StoryPresentation?
     @State private var showingAddStory = false
@@ -131,6 +132,7 @@ struct StoryCircles: View {
                 .environmentObject(storyService)
                 .environmentObject(authService)
                 .environmentObject(themeManager)
+                .environmentObject(relationshipService)
         }
         .sheet(isPresented: $showingAddStory) {
             AddStoryView()

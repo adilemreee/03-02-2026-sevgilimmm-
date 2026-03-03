@@ -13,6 +13,7 @@ struct StoryViewer: View {
     @EnvironmentObject var storyService: StoryService
     @EnvironmentObject var authService: AuthenticationService
     @EnvironmentObject var themeManager: ThemeManager
+    @EnvironmentObject var relationshipService: RelationshipService
     
     let stories: [Story] // Görüntülenecek story'ler (user + partner)
     let startIndex: Int
@@ -315,7 +316,7 @@ struct StoryViewer: View {
                             // Kendi Story'miz için Footer (Görüldü Göstergesi)
                             HStack(spacing: 16) {
                                 // Görülme Durumu Göstergesi
-                                let partnerId = storyService.partnerStories.first?.createdBy ?? ""
+                                let partnerId = relationshipService.currentRelationship?.partnerId(for: authService.currentUser?.id ?? "") ?? ""
                                 HStack(spacing: 6) {
                                     Image(systemName: story.isViewedByPartner(partnerId: partnerId) ? "eye.fill" : "eye.slash")
                                         .font(.system(size: 18))
