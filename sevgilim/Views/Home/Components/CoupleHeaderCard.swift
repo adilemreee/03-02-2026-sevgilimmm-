@@ -54,10 +54,15 @@ struct CoupleHeaderCard: View {
         }
     }
     
+    private static let impactFeedback: UIImpactFeedbackGenerator = {
+        let generator = UIImpactFeedbackGenerator(style: .light)
+        generator.prepare()
+        return generator
+    }()
+    
     private func createTapAnimation() {
-        // Haptic feedback
-        let impactFeedback = UIImpactFeedbackGenerator(style: .light)
-        impactFeedback.impactOccurred()
+        // Haptic feedback (reuse prepared generator)
+        Self.impactFeedback.impactOccurred()
         
         let heartCount = 9
         let baseAngle = Double.random(in: 0..<360)
@@ -144,38 +149,41 @@ struct TapHeartView: View {
     }
 }
 
-// MARK: - Persistent Heart Animations
+// MARK: - Persistent Heart Animations (Optimized - no TimelineView)
 
 private struct HeartPulseView: View {
+    @State private var isPulsing = false
+    @State private var isRotating = false
+    
     var body: some View {
-        TimelineView(.animation) { timeline in
-            let time = timeline.date.timeIntervalSinceReferenceDate
-            let normalized = (sin(time * .pi * 1.4) + 1) / 2 // 0...1
-            let scale = 0.88 + normalized * 0.16
-            let rotation = sin(time * 1.3) * 4
-            let glowOpacity = 0.3 + normalized * 0.35
+        ZStack {
+            Circle()
+                .fill(Color.red.opacity(0.3))
+                .blur(radius: 14)
+                .scaleEffect(isPulsing ? 1.6 : 1.36)
+                .opacity(isPulsing ? 0.65 : 0.3)
             
-            ZStack {
-                Circle()
-                    .fill(Color.red.opacity(0.3))
-                    .blur(radius: 14)
-                    .scaleEffect(scale * 1.55)
-                    .opacity(glowOpacity)
-                
-                Image(systemName: "heart.fill")
-                    .font(.system(size: 38, weight: .semibold))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [.pink, .red, Color.purple.opacity(0.8)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
+            Image(systemName: "heart.fill")
+                .font(.system(size: 38, weight: .semibold))
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [.pink, .red, Color.purple.opacity(0.8)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
                     )
-                    .shadow(color: .red.opacity(0.45), radius: 12, x: 0, y: 0)
-                    .scaleEffect(scale)
-                    .rotationEffect(.degrees(rotation))
+                )
+                .shadow(color: .red.opacity(0.45), radius: 12, x: 0, y: 0)
+                .scaleEffect(isPulsing ? 1.04 : 0.88)
+                .rotationEffect(.degrees(isRotating ? 4 : -4))
+        }
+        .frame(width: 60, height: 60)
+        .onAppear {
+            withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) {
+                isPulsing = true
             }
-            .frame(width: 60, height: 60)
+            withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
+                isRotating = true
+            }
         }
     }
 }
@@ -184,36 +192,38 @@ private struct FloatingHeartsField: View {
     let seeds: [FloatingHeartSeed]
     
     var body: some View {
-        TimelineView(.animation) { timeline in
-            let time = timeline.date.timeIntervalSinceReferenceDate
-            
-            ZStack {
-                ForEach(seeds) { seed in
-                    let progress = FloatingHeartsField.progress(for: time, seed: seed)
-                    let eased = FloatingHeartsField.easeOut(progress)
-                    let yOffset = CGFloat(-eased * 46)
-                    let opacity = max(0, 1 - progress * 1.3)
-                    let wobble = sin((time + seed.phaseOffset) * 2.4) * 6
-                    
-                    Image(systemName: "heart.fill")
-                        .font(.caption)
-                        .foregroundColor(seed.color.opacity(0.75))
-                        .offset(x: seed.horizontal + CGFloat(wobble), y: yOffset)
-                        .scaleEffect(seed.baseScale + CGFloat(progress) * 0.22)
-                        .opacity(opacity)
-                }
+        ZStack {
+            ForEach(seeds) { seed in
+                FloatingHeartItem(seed: seed)
             }
         }
     }
+}
+
+/// Individual floating heart with its own lightweight animation cycle
+private struct FloatingHeartItem: View {
+    let seed: FloatingHeartSeed
+    @State private var isFloating = false
     
-    private static func progress(for time: TimeInterval, seed: FloatingHeartSeed) -> Double {
-        let shifted = time + seed.phaseOffset
-        let cycle = shifted.truncatingRemainder(dividingBy: seed.cycleDuration)
-        return cycle / seed.cycleDuration
-    }
-    
-    private static func easeOut(_ t: Double) -> Double {
-        1 - pow(1 - t, 3)
+    var body: some View {
+        Image(systemName: "heart.fill")
+            .font(.caption)
+            .foregroundColor(seed.color.opacity(0.75))
+            .offset(
+                x: seed.horizontal + (isFloating ? 6 : -6),
+                y: isFloating ? -46 : 0
+            )
+            .scaleEffect(isFloating ? seed.baseScale + 0.22 : seed.baseScale)
+            .opacity(isFloating ? 0 : 0.75)
+            .onAppear {
+                withAnimation(
+                    .easeOut(duration: seed.cycleDuration)
+                    .repeatForever(autoreverses: false)
+                    .delay(seed.phaseOffset.truncatingRemainder(dividingBy: seed.cycleDuration))
+                ) {
+                    isFloating = true
+                }
+            }
     }
 }
 

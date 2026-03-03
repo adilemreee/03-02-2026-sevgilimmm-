@@ -54,15 +54,12 @@ class MovieService: ObservableObject {
                     try? doc.data(as: Movie.self)
                 }
                 
-                // Client-side sorting: En yeni izlenenler üstte
-                let sortedMovies = newMovies.sorted { $0.watchedDate > $1.watchedDate }
-                
                 Task { @MainActor in
-                    self.movies = sortedMovies
+                    self.movies = newMovies
                     self.isLoading = false
                     
                     // 💾 Önbelleğe kaydet
-                    self.offlineCache.saveMovies(sortedMovies)
+                    self.offlineCache.saveMovies(newMovies)
                 }
             }
     }

@@ -109,11 +109,26 @@ final class OfflineSyncManager: ObservableObject {
         encoder.dateEncodingStrategy = .secondsSince1970
         decoder.dateDecodingStrategy = .secondsSince1970
         
-        // Load persisted queue
-        loadQueue()
+        // Load persisted queue OFF main thread to avoid blocking UI at launch
+        let url = queueFileURL
+        let dec = decoder
+        Task.detached { [weak self] in
+            guard let data = try? Data(contentsOf: url),
+                  let queue = try? dec.decode([PendingOperation].self, from: data) else { return }
+            await self?.applyLoadedQueue(queue)
+        }
         
         // Listen for connectivity changes
         setupNetworkListener()
+    }
+    
+    /// Apply loaded queue on main actor after background disk read
+    private func applyLoadedQueue(_ queue: [PendingOperation]) {
+        operationQueue = queue
+        pendingOperations = queue.count
+        if !queue.isEmpty {
+            print("📋 OfflineSync: \(queue.count) bekleyen işlem yüklendi")
+        }
     }
     
     // MARK: - Public API
@@ -242,18 +257,16 @@ final class OfflineSyncManager: ObservableObject {
     }
     
     private func saveQueue() {
-        guard let data = try? encoder.encode(operationQueue) else { return }
-        try? data.write(to: queueFileURL, options: .atomic)
-    }
-    
-    private func loadQueue() {
-        guard let data = try? Data(contentsOf: queueFileURL),
-              let queue = try? decoder.decode([PendingOperation].self, from: data) else { return }
-        operationQueue = queue
-        pendingOperations = queue.count
-        
-        if !queue.isEmpty {
-            print("📋 OfflineSync: \(queue.count) bekleyen işlem yüklendi")
+        let data: Data
+        do {
+            data = try encoder.encode(operationQueue)
+        } catch { return }
+        let url = queueFileURL
+        // Write to disk off main thread
+        Task.detached {
+            try? data.write(to: url, options: .atomic)
         }
     }
+    
+    // loadQueue is now handled inline in init via Task.detached
 }

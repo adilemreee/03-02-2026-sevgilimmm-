@@ -26,53 +26,48 @@ extension View {
         navigateToMemories: Binding<Bool>? = nil
     ) -> some View {
         self
-            .onChange(of: router.chatTrigger) { _, _ in
-                if let tab = selectedTab { tab.wrappedValue = 0 }
-                navigateToChat?.wrappedValue = true
-            }
-            .onChange(of: router.surprisesTrigger) { _, _ in
-                if let tab = selectedTab { tab.wrappedValue = 0 }
-                navigateToSurprises?.wrappedValue = true
-            }
-            .onChange(of: router.specialDaysTrigger) { _, _ in
-                if let tab = selectedTab { tab.wrappedValue = 0 }
-                navigateToSpecialDays?.wrappedValue = true
-            }
-            .onChange(of: router.plansTrigger) { _, _ in
-                if let tab = selectedTab { tab.wrappedValue = 0 }
-                navigateToPlans?.wrappedValue = true
-            }
-            .onChange(of: router.moviesTrigger) { _, _ in
-                if let tab = selectedTab { tab.wrappedValue = 0 }
-                navigateToMovies?.wrappedValue = true
-            }
-            .onChange(of: router.songsTrigger) { _, _ in
-                if let tab = selectedTab { tab.wrappedValue = 0 }
-                navigateToSongs?.wrappedValue = true
-            }
-            .onChange(of: router.placesTrigger) { _, _ in
-                if let tab = selectedTab { tab.wrappedValue = 0 }
-                navigateToPlaces?.wrappedValue = true
-            }
-            .onChange(of: router.secretVaultTrigger) { _, _ in
-                if let tab = selectedTab { tab.wrappedValue = 0 }
-                navigateToSecretVault?.wrappedValue = true
-            }
-            .onChange(of: router.photosTrigger) { _, _ in
-                if let tab = selectedTab { tab.wrappedValue = 2 }
-                navigateToPhotos?.wrappedValue = true
-            }
-            .onChange(of: router.notesTrigger) { _, _ in
-                if let tab = selectedTab { tab.wrappedValue = 3 }
-                navigateToNotes?.wrappedValue = true
-            }
-            .onChange(of: router.memoriesTrigger) { _, _ in
-                if let tab = selectedTab { tab.wrappedValue = 1 }
-                navigateToMemories?.wrappedValue = true
+            .onChange(of: router.pendingNavigation) { _, target in
+                guard let target = target else { return }
+                switch target {
+                case .chat:
+                    if let tab = selectedTab { tab.wrappedValue = 0 }
+                    navigateToChat?.wrappedValue = true
+                case .surprises:
+                    if let tab = selectedTab { tab.wrappedValue = 0 }
+                    navigateToSurprises?.wrappedValue = true
+                case .specialDays:
+                    if let tab = selectedTab { tab.wrappedValue = 0 }
+                    navigateToSpecialDays?.wrappedValue = true
+                case .plans:
+                    if let tab = selectedTab { tab.wrappedValue = 0 }
+                    navigateToPlans?.wrappedValue = true
+                case .movies:
+                    if let tab = selectedTab { tab.wrappedValue = 0 }
+                    navigateToMovies?.wrappedValue = true
+                case .songs:
+                    if let tab = selectedTab { tab.wrappedValue = 0 }
+                    navigateToSongs?.wrappedValue = true
+                case .places:
+                    if let tab = selectedTab { tab.wrappedValue = 0 }
+                    navigateToPlaces?.wrappedValue = true
+                case .secretVault:
+                    if let tab = selectedTab { tab.wrappedValue = 0 }
+                    navigateToSecretVault?.wrappedValue = true
+                case .photos:
+                    if let tab = selectedTab { tab.wrappedValue = 2 }
+                    navigateToPhotos?.wrappedValue = true
+                case .notes:
+                    if let tab = selectedTab { tab.wrappedValue = 3 }
+                    navigateToNotes?.wrappedValue = true
+                case .memories:
+                    if let tab = selectedTab { tab.wrappedValue = 1 }
+                    navigateToMemories?.wrappedValue = true
+                }
+                router.clearNavigation()
             }
     }
     
-    /// Checks all navigation triggers on appear and sets initial navigation state
+    /// Checks pending navigation on appear and sets initial navigation state
     func checkNavigationTriggersOnAppear(
         router: AppNavigationRouter,
         navigateToChat: Binding<Bool>? = nil,
@@ -88,17 +83,21 @@ extension View {
         navigateToMemories: Binding<Bool>? = nil
     ) -> some View {
         self.onAppear {
-            if router.chatTrigger > 0 { navigateToChat?.wrappedValue = true }
-            if router.surprisesTrigger > 0 { navigateToSurprises?.wrappedValue = true }
-            if router.specialDaysTrigger > 0 { navigateToSpecialDays?.wrappedValue = true }
-            if router.plansTrigger > 0 { navigateToPlans?.wrappedValue = true }
-            if router.moviesTrigger > 0 { navigateToMovies?.wrappedValue = true }
-            if router.songsTrigger > 0 { navigateToSongs?.wrappedValue = true }
-            if router.placesTrigger > 0 { navigateToPlaces?.wrappedValue = true }
-            if router.secretVaultTrigger > 0 { navigateToSecretVault?.wrappedValue = true }
-            if router.photosTrigger > 0 { navigateToPhotos?.wrappedValue = true }
-            if router.notesTrigger > 0 { navigateToNotes?.wrappedValue = true }
-            if router.memoriesTrigger > 0 { navigateToMemories?.wrappedValue = true }
+            guard let target = router.pendingNavigation else { return }
+            switch target {
+            case .chat:        navigateToChat?.wrappedValue = true
+            case .surprises:   navigateToSurprises?.wrappedValue = true
+            case .specialDays: navigateToSpecialDays?.wrappedValue = true
+            case .plans:       navigateToPlans?.wrappedValue = true
+            case .movies:      navigateToMovies?.wrappedValue = true
+            case .songs:       navigateToSongs?.wrappedValue = true
+            case .places:      navigateToPlaces?.wrappedValue = true
+            case .secretVault: navigateToSecretVault?.wrappedValue = true
+            case .photos:      navigateToPhotos?.wrappedValue = true
+            case .notes:       navigateToNotes?.wrappedValue = true
+            case .memories:    navigateToMemories?.wrappedValue = true
+            }
+            router.clearNavigation()
         }
     }
 }

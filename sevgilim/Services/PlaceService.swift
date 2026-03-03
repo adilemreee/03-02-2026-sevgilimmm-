@@ -56,15 +56,12 @@ class PlaceService: ObservableObject {
                     try? doc.data(as: Place.self)
                 }
                 
-                // Client-side sorting: En yeni tarihler üstte
-                let sortedPlaces = newPlaces.sorted { $0.date > $1.date }
-                
                 Task { @MainActor in
-                    self.places = sortedPlaces
+                    self.places = newPlaces
                     self.isLoading = false
                     
                     // 💾 Önbelleğe kaydet
-                    self.offlineCache.savePlaces(sortedPlaces)
+                    self.offlineCache.savePlaces(newPlaces)
                 }
             }
     }

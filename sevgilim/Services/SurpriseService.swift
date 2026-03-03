@@ -32,6 +32,7 @@ class SurpriseService: ObservableObject {
         
         listener = db.collection("surprises")
             .whereField("relationshipId", isEqualTo: relationshipId)
+            .limit(to: 50)
             .addSnapshotListener { [weak self] snapshot, error in
                 guard let self = self else { return }
                 

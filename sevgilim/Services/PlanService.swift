@@ -54,15 +54,12 @@ class PlanService: ObservableObject {
                     try? doc.data(as: Plan.self)
                 }
                 
-                // Client-side sorting: En yeni oluşturulanlar üstte
-                let sortedPlans = newPlans.sorted { $0.createdAt > $1.createdAt }
-                
                 Task { @MainActor in
-                    self.plans = sortedPlans
+                    self.plans = newPlans
                     self.isLoading = false
                     
                     // 💾 Önbelleğe kaydet
-                    self.offlineCache.savePlans(sortedPlans)
+                    self.offlineCache.savePlans(newPlans)
                 }
             }
     }

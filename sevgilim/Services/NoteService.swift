@@ -56,15 +56,12 @@ class NoteService: ObservableObject {
                     try? doc.data(as: Note.self)
                 }
                 
-                // Client-side sorting: En yeni güncellenenler üstte
-                let sortedNotes = newNotes.sorted { $0.updatedAt > $1.updatedAt }
-                
                 Task { @MainActor in
-                    self.notes = sortedNotes
+                    self.notes = newNotes
                     self.isLoading = false
                     
                     // 💾 Önbelleğe kaydet
-                    self.offlineCache.saveNotes(sortedNotes)
+                    self.offlineCache.saveNotes(newNotes)
                 }
             }
     }

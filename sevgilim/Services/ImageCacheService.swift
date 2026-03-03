@@ -25,9 +25,9 @@ actor ImageCacheService {
     private(set) var diskHits: Int = 0
     
     private init() {
-        // Configure memory cache - increased for offline-first
-        memoryCache.countLimit = 200 // Max 200 images in memory
-        memoryCache.totalCostLimit = 1024 * 1024 * 250 // 250 MB max memory usage
+        // Configure memory cache — balanced for offline-first without OOM risk
+        memoryCache.countLimit = 100 // Max 100 images in memory
+        memoryCache.totalCostLimit = 1024 * 1024 * 80 // 80 MB max memory usage
         
         // Setup disk cache directory
         let cachesDirectory = fileManager.urls(for: .cachesDirectory, in: .userDomainMask)[0]

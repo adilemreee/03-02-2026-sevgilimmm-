@@ -81,7 +81,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         
         // Firestore offline persistence - Daha büyük cache ve offline destek
         let firestoreSettings = Firestore.firestore().settings
-        firestoreSettings.cacheSettings = PersistentCacheSettings(sizeBytes: 100 * 1024 * 1024 as NSNumber) // 100 MB cache
+        firestoreSettings.cacheSettings = PersistentCacheSettings(sizeBytes: 50 * 1024 * 1024 as NSNumber) // 50 MB cache
         firestoreSettings.isSSLEnabled = true
         Firestore.firestore().settings = firestoreSettings
         

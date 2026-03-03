@@ -137,24 +137,26 @@ final class HomeViewModel: ObservableObject {
     }
     
     private func observeServices() {
-        [
-            authService.objectWillChange,
-            relationshipService.objectWillChange,
-            memoryService.objectWillChange,
-            photoService.objectWillChange,
-            noteService.objectWillChange,
-            planService.objectWillChange,
-            surpriseService.objectWillChange,
-            specialDayService.objectWillChange,
-            messageServiceRef.objectWillChange,
-            moodService.objectWillChange
-        ].forEach { publisher in
-            publisher
-                .receive(on: RunLoop.main)
-                .sink { [weak self] _ in
-                    self?.objectWillChange.send()
-                }
-                .store(in: &cancellables)
+        // Merge all service change publishers and throttle to prevent cascade redraws
+        // Without throttle, ANY change in ANY of the 10 services triggers a full HomeView redraw
+        Publishers.MergeMany(
+            [
+                authService.objectWillChange.eraseToAnyPublisher(),
+                relationshipService.objectWillChange.eraseToAnyPublisher(),
+                memoryService.objectWillChange.eraseToAnyPublisher(),
+                photoService.objectWillChange.eraseToAnyPublisher(),
+                noteService.objectWillChange.eraseToAnyPublisher(),
+                planService.objectWillChange.eraseToAnyPublisher(),
+                surpriseService.objectWillChange.eraseToAnyPublisher(),
+                specialDayService.objectWillChange.eraseToAnyPublisher(),
+                messageServiceRef.objectWillChange.eraseToAnyPublisher(),
+                moodService.objectWillChange.eraseToAnyPublisher()
+            ]
+        )
+        .throttle(for: .milliseconds(250), scheduler: RunLoop.main, latest: true)
+        .sink { [weak self] _ in
+            self?.objectWillChange.send()
         }
+        .store(in: &cancellables)
     }
 }

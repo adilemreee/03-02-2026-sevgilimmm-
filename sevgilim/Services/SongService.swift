@@ -56,15 +56,12 @@ class SongService: ObservableObject {
                     try? doc.data(as: Song.self)
                 }
                 
-                // Client-side sorting: En yeni tarihler üstte
-                let sortedSongs = newSongs.sorted { $0.date > $1.date }
-                
                 Task { @MainActor in
-                    self.songs = sortedSongs
+                    self.songs = newSongs
                     self.isLoading = false
                     
                     // 💾 Önbelleğe kaydet
-                    self.offlineCache.saveSongs(sortedSongs)
+                    self.offlineCache.saveSongs(newSongs)
                 }
             }
     }

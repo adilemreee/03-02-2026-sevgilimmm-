@@ -13,6 +13,13 @@ final class VideoCacheService {
     private let cacheDirectory: URL
     private let queue = DispatchQueue(label: "VideoCacheService.queue", qos: .utility)
     
+    /// Maximum total cache size: 200 MB
+    private let maxCacheSize: Int = 200 * 1024 * 1024
+    
+    /// In-flight downloads keyed by remote URL — prevents duplicate concurrent downloads
+    private var inFlightDownloads: [String: Task<URL, Error>] = [:]
+    private let lock = NSLock()
+    
     private init() {
         let baseDirectory = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSTemporaryDirectory())
@@ -31,26 +38,50 @@ final class VideoCacheService {
         
         let destinationURL = cacheFileURL(for: remoteURL)
         if fileManager.fileExists(atPath: destinationURL.path) {
+            // Touch the file to update access date (LRU)
+            try? fileManager.setAttributes([.modificationDate: Date()], ofItemAtPath: destinationURL.path)
             return destinationURL
         }
         
-        let (temporaryURL, response) = try await URLSession.shared.download(from: remoteURL)
-        
-        if let httpResponse = response as? HTTPURLResponse,
-           !(200..<300).contains(httpResponse.statusCode) {
-            throw NSError(domain: "VideoCacheService", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Video indirilemedi (kod: \(httpResponse.statusCode))"])
+        // Dedup: check if we're already downloading this URL
+        lock.lock()
+        if let existing = inFlightDownloads[remoteURLString] {
+            lock.unlock()
+            return try await existing.value
         }
         
-        do {
-            try fileManager.moveItem(at: temporaryURL, to: destinationURL)
-        } catch {
-            // Eğer dosya zaten varsa veya taşınamıyorsa, var olanı döndür
-            if !fileManager.fileExists(atPath: destinationURL.path) {
-                throw error
+        let task = Task<URL, Error> {
+            defer {
+                lock.lock()
+                inFlightDownloads.removeValue(forKey: remoteURLString)
+                lock.unlock()
             }
+            
+            let (temporaryURL, response) = try await URLSession.shared.download(from: remoteURL)
+            
+            if let httpResponse = response as? HTTPURLResponse,
+               !(200..<300).contains(httpResponse.statusCode) {
+                throw NSError(domain: "VideoCacheService", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Video indirilemedi (kod: \(httpResponse.statusCode))"])
+            }
+            
+            do {
+                try fileManager.moveItem(at: temporaryURL, to: destinationURL)
+            } catch {
+                if !fileManager.fileExists(atPath: destinationURL.path) {
+                    throw error
+                }
+            }
+            
+            // Evict old files if cache exceeds 200 MB
+            evictIfNeeded()
+            
+            return destinationURL
         }
         
-        return destinationURL
+        inFlightDownloads[remoteURLString] = task
+        lock.unlock()
+        
+        return try await task.value
     }
     
     func clearCache() {
@@ -58,9 +89,42 @@ final class VideoCacheService {
             guard let files = try? fileManager.contentsOfDirectory(at: cacheDirectory, includingPropertiesForKeys: nil) else {
                 return
             }
-            
             for file in files {
                 try? fileManager.removeItem(at: file)
+            }
+        }
+    }
+    
+    /// LRU eviction: remove oldest-accessed files until total size is under maxCacheSize
+    private func evictIfNeeded() {
+        queue.async { [weak self] in
+            guard let self = self else { return }
+            let resourceKeys: Set<URLResourceKey> = [.fileSizeKey, .contentModificationDateKey]
+            guard let files = try? self.fileManager.contentsOfDirectory(
+                at: self.cacheDirectory,
+                includingPropertiesForKeys: Array(resourceKeys)
+            ) else { return }
+            
+            var totalSize = 0
+            var fileInfos: [(url: URL, size: Int, date: Date)] = []
+            
+            for file in files {
+                guard let values = try? file.resourceValues(forKeys: resourceKeys),
+                      let size = values.fileSize,
+                      let date = values.contentModificationDate else { continue }
+                totalSize += size
+                fileInfos.append((url: file, size: size, date: date))
+            }
+            
+            guard totalSize > self.maxCacheSize else { return }
+            
+            // Sort oldest first
+            fileInfos.sort { $0.date < $1.date }
+            
+            for info in fileInfos {
+                guard totalSize > self.maxCacheSize else { break }
+                try? self.fileManager.removeItem(at: info.url)
+                totalSize -= info.size
             }
         }
     }

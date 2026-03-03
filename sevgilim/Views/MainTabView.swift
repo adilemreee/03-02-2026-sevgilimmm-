@@ -83,20 +83,25 @@ struct MainTabView: View {
         }
         .ignoresSafeArea(.keyboard)
         .onAppear {
-            startServices()
-            handleNavigationTriggers()
+            startServicesStaggered()
+            handlePendingNavigation()
         }
-        .onChange(of: navigationRouter.chatTrigger) { _, _ in selectedTab = 0 }
-        .onChange(of: navigationRouter.surprisesTrigger) { _, _ in selectedTab = 0 }
-        .onChange(of: navigationRouter.specialDaysTrigger) { _, _ in selectedTab = 0 }
-        .onChange(of: navigationRouter.moviesTrigger) { _, _ in selectedTab = 0 }
-        .onChange(of: navigationRouter.plansTrigger) { _, _ in selectedTab = 0 }
-        .onChange(of: navigationRouter.songsTrigger) { _, _ in selectedTab = 0 }
-        .onChange(of: navigationRouter.placesTrigger) { _, _ in selectedTab = 0 }
-        .onChange(of: navigationRouter.secretVaultTrigger) { _, _ in selectedTab = 0 }
-        .onChange(of: navigationRouter.photosTrigger) { _, _ in selectedTab = 2 }
-        .onChange(of: navigationRouter.notesTrigger) { _, _ in selectedTab = 3 }
-        .onChange(of: navigationRouter.memoriesTrigger) { _, _ in selectedTab = 1 }
+        // Single consolidated onChange for navigation — replaces 11 separate onChange listeners
+        .onChange(of: navigationRouter.pendingNavigation) { _, target in
+            guard let target = target else { return }
+            switch target {
+            case .chat, .surprises, .specialDays, .movies, .plans, .songs, .places, .secretVault:
+                selectedTab = 0
+            case .photos:
+                selectedTab = 2
+            case .notes:
+                selectedTab = 3
+            case .memories:
+                selectedTab = 1
+            }
+            // Clear after handling
+            navigationRouter.clearNavigation()
+        }
         .onReceive(relationshipService.$currentRelationship) { relationship in
             if let relationship = relationship,
                let currentUser = authService.currentUser,
@@ -111,40 +116,54 @@ struct MainTabView: View {
         }
     }
     
-    private func startServices() {
+    /// Staggered service start to avoid CPU spike on launch
+    /// Phase 1 (immediate): Critical services for UI display
+    /// Phase 2 (0.3s delay): Secondary data services
+    /// Phase 3 (0.8s delay): Background/optional services
+    private func startServicesStaggered() {
         guard let currentUser = authService.currentUser,
               let userId = currentUser.id,
               let relationshipId = currentUser.relationshipId else { return }
         
-        // Ensure relationship service is listening (Critical for finding partner ID)
+        // Phase 1: Critical — needed for home screen immediately
         relationshipService.listenToRelationship(relationshipId: relationshipId)
-        
         surpriseService.listenToSurprises(relationshipId: relationshipId, userId: userId)
-        memoryService.listenToMemories(relationshipId: relationshipId)
-        photoService.listenToPhotos(relationshipId: relationshipId)
-        noteService.listenToNotes(relationshipId: relationshipId)
-        planService.listenToPlans(relationshipId: relationshipId)
-        movieService.listenToMovies(relationshipId: relationshipId)
-        placeService.listenToPlaces(relationshipId: relationshipId)
-        songService.listenToSongs(relationshipId: relationshipId)
-        storyService.listenToStories(relationshipId: relationshipId, currentUserId: userId)
-        secretVaultService.listenToVault(relationshipId: relationshipId)
         
-        print("🎬 Tüm servisler başlatıldı")
+        // Phase 2: Secondary data — needed when user scrolls or switches tabs
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 300_000_000) // 0.3s
+            memoryService.listenToMemories(relationshipId: relationshipId)
+            photoService.listenToPhotos(relationshipId: relationshipId)
+            noteService.listenToNotes(relationshipId: relationshipId)
+            print("📦 Phase 2 servisler başlatıldı")
+        }
+        
+        // Phase 3: Background services — can wait
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 800_000_000) // 0.8s
+            planService.listenToPlans(relationshipId: relationshipId)
+            movieService.listenToMovies(relationshipId: relationshipId)
+            placeService.listenToPlaces(relationshipId: relationshipId)
+            songService.listenToSongs(relationshipId: relationshipId)
+            storyService.listenToStories(relationshipId: relationshipId, currentUserId: userId)
+            secretVaultService.listenToVault(relationshipId: relationshipId)
+            print("🎬 Phase 3 servisler başlatıldı — Tüm servisler hazır")
+        }
     }
     
-    private func handleNavigationTriggers() {
-        if navigationRouter.chatTrigger > 0 { selectedTab = 0 }
-        if navigationRouter.surprisesTrigger > 0 { selectedTab = 0 }
-        if navigationRouter.specialDaysTrigger > 0 { selectedTab = 0 }
-        if navigationRouter.moviesTrigger > 0 { selectedTab = 0 }
-        if navigationRouter.plansTrigger > 0 { selectedTab = 0 }
-        if navigationRouter.songsTrigger > 0 { selectedTab = 0 }
-        if navigationRouter.placesTrigger > 0 { selectedTab = 0 }
-        if navigationRouter.secretVaultTrigger > 0 { selectedTab = 0 }
-        if navigationRouter.photosTrigger > 0 { selectedTab = 2 }
-        if navigationRouter.notesTrigger > 0 { selectedTab = 3 }
-        if navigationRouter.memoriesTrigger > 0 { selectedTab = 1 }
+    private func handlePendingNavigation() {
+        guard let target = navigationRouter.pendingNavigation else { return }
+        switch target {
+        case .chat, .surprises, .specialDays, .movies, .plans, .songs, .places, .secretVault:
+            selectedTab = 0
+        case .photos:
+            selectedTab = 2
+        case .notes:
+            selectedTab = 3
+        case .memories:
+            selectedTab = 1
+        }
+        navigationRouter.clearNavigation()
     }
     
     // MARK: - ViewModel Factory

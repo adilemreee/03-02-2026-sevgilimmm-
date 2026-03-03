@@ -63,18 +63,15 @@ class MemoryService: ObservableObject {
                     }
                 }
                 
-                // Client-side sorting: En yeni tarihler üstte
-                let sortedMemories = newMemories.sorted { $0.date > $1.date }
-                
                 Task { @MainActor in
-                    self.memories = sortedMemories
+                    self.memories = newMemories
                     self.isLoading = false
                     
                     // 💾 Önbelleğe kaydet
-                    self.offlineCache.saveMemories(sortedMemories)
+                    self.offlineCache.saveMemories(newMemories)
                     
                     // Anı fotoğraflarını önbelleğe al
-                    let photoURLs = sortedMemories.flatMap { $0.allPhotoURLs }
+                    let photoURLs = newMemories.flatMap { $0.allPhotoURLs }
                     if !photoURLs.isEmpty {
                         Task.detached(priority: .background) {
                             await ImageCacheService.shared.preloadImages(photoURLs, thumbnail: true)

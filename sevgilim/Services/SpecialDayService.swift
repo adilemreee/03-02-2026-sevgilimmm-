@@ -27,6 +27,7 @@ class SpecialDayService: ObservableObject {
         
         listener = db.collection("specialDays")
             .whereField("relationshipId", isEqualTo: relationshipId)
+            .limit(to: 100)
             .addSnapshotListener { [weak self] snapshot, error in
                 guard let self = self else { 
                     print("❌ Self is nil in listener")
@@ -40,7 +41,7 @@ class SpecialDayService: ObservableObject {
                 
                 guard let documents = snapshot?.documents else {
                     print("⚠️ No documents in snapshot")
-                    DispatchQueue.main.async {
+                    Task { @MainActor in
                         self.specialDays = []
                     }
                     return
@@ -59,13 +60,14 @@ class SpecialDayService: ObservableObject {
                     }
                 }
                 
-                DispatchQueue.main.async {
-                    // Sort by date on client side
-                    self.specialDays = days.sorted { $0.date < $1.date }
+                let sortedDays = days.sorted { $0.date < $1.date }
+                
+                Task { @MainActor in
+                    self.specialDays = sortedDays
                     print("✅ Updated specialDays array with \(self.specialDays.count) items")
                     
                     // 💾 Önbelleğe kaydet
-                    self.offlineCache.saveSpecialDays(days.sorted { $0.date < $1.date })
+                    self.offlineCache.saveSpecialDays(sortedDays)
                 }
             }
     }
@@ -137,6 +139,11 @@ class SpecialDayService: ObservableObject {
             .filter { !$0.isPast }
             .sorted { $0.daysUntil < $1.daysUntil }
             .first
+    }
+    
+    func stopListening() {
+        listener?.remove()
+        listener = nil
     }
     
     deinit {

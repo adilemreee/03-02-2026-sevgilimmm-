@@ -57,22 +57,25 @@ class StoryService: ObservableObject {
                     }
                 }
                 
-                // Süresi dolmuş story'leri sil
-                for story in fetchedStories where story.isExpired {
-                    if let storyId = story.id {
-                        Task {
-                            try? await self.deleteStory(storyId: storyId)
+                // Aktif story'leri filtrele
+                let activeStories = fetchedStories.filter { !$0.isExpired }
+                
+                // Süresi dolmuş story'leri arka planda sil (snapshot callback dışında)
+                let expiredStories = fetchedStories.filter { $0.isExpired }
+                if !expiredStories.isEmpty {
+                    Task.detached { [weak self] in
+                        for story in expiredStories {
+                            if let storyId = story.id {
+                                try? await self?.deleteStory(storyId: storyId)
+                            }
                         }
                     }
                 }
                 
-                // Aktif story'leri filtrele
-                let activeStories = fetchedStories.filter { !$0.isExpired }
-                
                 // 💾 Önbelleğe kaydet
                 self.offlineCache.saveStories(activeStories)
                 
-                DispatchQueue.main.async {
+                Task { @MainActor in
                     self.stories = activeStories
                     
                     // User ve partner story'lerini ayır (array olarak)
@@ -402,6 +405,7 @@ class StoryService: ObservableObject {
     }
     
     nonisolated deinit {
-        // Direct removal in deinit - listener registration is thread-safe
+        // Listener removal not possible in nonisolated deinit.
+        // Call stopListening() explicitly before releasing StoryService.
     }
 }

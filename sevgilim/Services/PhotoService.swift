@@ -58,35 +58,32 @@ class PhotoService: ObservableObject {
                     try? doc.data(as: Photo.self)
                 }
                 
-                // Client-side sorting: En yeni tarihler üstte
-                let sortedPhotos = newPhotos.sorted { $0.date > $1.date }
-                
                 Task { @MainActor in
-                    self.photos = sortedPhotos
+                    self.photos = newPhotos
                     self.isLoading = false
                     
                     // 💾 Önbelleğe kaydet
-                    self.offlineCache.savePhotos(sortedPhotos)
+                    self.offlineCache.savePhotos(newPhotos)
                     
                     // Preload thumbnails for better UX (daha agresif)
-                    self.preloadThumbnails(photos: sortedPhotos)
+                    self.preloadThumbnails(photos: newPhotos)
                 }
             }
     }
     
-    // Preload images in cache for smooth scrolling - agresif önbellek
+    // Preload images in cache for smooth scrolling — conservative approach
     private func preloadThumbnails(photos: [Photo]) {
-        // İlk 20 thumbnail'ı hemen yükle
-        let thumbnailUrls = photos.prefix(20).map { $0.thumbnailURL ?? $0.imageURL }
+        // İlk 10 thumbnail'ı hemen yükle (reduced from 20)
+        let thumbnailUrls = photos.prefix(10).map { $0.thumbnailURL ?? $0.imageURL }
         Task.detached(priority: .background) {
             await ImageCacheService.shared.preloadImages(Array(thumbnailUrls), thumbnail: true)
         }
         
-        // WiFi'daysa tüm fotoğrafları offline için önbelleğe al
+        // WiFi'daysa ilk 50 fotoğrafı offline için önbelleğe al (capped, not all)
         if NetworkMonitor.shared.shouldDownloadLargeMedia {
-            let allUrls = photos.map { $0.thumbnailURL ?? $0.imageURL }
+            let cappedUrls = photos.prefix(50).map { $0.thumbnailURL ?? $0.imageURL }
             Task.detached(priority: .background) {
-                await ImageCacheService.shared.preloadAllForOffline(Array(allUrls))
+                await ImageCacheService.shared.preloadAllForOffline(Array(cappedUrls))
             }
         }
     }
