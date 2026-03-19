@@ -16,6 +16,18 @@ struct SurprisesView: View {
     @State private var showDeleteConfirmation = false
     @State private var selectedSurprise: Surprise?
     
+    private var headerSubtitle: String {
+        if surpriseService.surprises.isEmpty {
+            return "Aşkın için minik sürprizler hazırla"
+        }
+        
+        if !partnerSurprises.isEmpty || !userSurprises.isEmpty {
+            return "\(partnerSurprises.count) sana, \(userSurprises.count) senden"
+        }
+        
+        return "Sana gelen ve hazırladığın sürprizler"
+    }
+    
     var body: some View {
         NavigationStack {
             ZStack {
@@ -31,40 +43,14 @@ struct SurprisesView: View {
                 .ignoresSafeArea()
                 
                 VStack(spacing: 0) {
-                    // Compact Header (diğer sayfalar gibi)
-                    HStack(spacing: 12) {
-                        Image(systemName: "gift.fill")
-                            .font(.system(size: 24))
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [.purple, .pink],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Sürprizler")
-                                .font(.title3)
-                                .fontWeight(.bold)
-                            
-                            Text("Aşkımaaa sürprizler")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        
-                        Spacer()
-                        
-                        // Add Button
-                        Button(action: { showAddSurprise = true }) {
-                            Image(systemName: "plus.circle.fill")
-                                .font(.title2)
-                                .foregroundColor(themeManager.currentTheme.primaryColor)
-                        }
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 16)
-                    .background(.ultraThinMaterial)
+                    SectionHeroHeader(
+                        systemImage: "gift.fill",
+                        iconColors: [.purple, .pink],
+                        title: "Sürprizler",
+                        subtitle: headerSubtitle,
+                        countValue: "\(surpriseService.surprises.count)",
+                        countTint: .purple
+                    )
                     
                     ScrollView {
                         VStack(spacing: 30) {
@@ -101,6 +87,26 @@ struct SurprisesView: View {
                         .padding(.horizontal, 20)
                         .padding(.top, 20)
                         .padding(.bottom, 30)
+                    }
+                }
+                
+                // Floating Add Button
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        Button(action: { showAddSurprise = true }) {
+                            Image(systemName: "plus")
+                                .font(.title2)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.white)
+                                .frame(width: 60, height: 60)
+                                .background(themeManager.currentTheme.primaryColor)
+                                .clipShape(Circle())
+                                .shadow(color: themeManager.currentTheme.primaryColor.opacity(0.3), radius: 10, x: 0, y: 5)
+                        }
+                        .padding(.trailing, 20)
+                        .padding(.bottom, 80)
                     }
                 }
             }

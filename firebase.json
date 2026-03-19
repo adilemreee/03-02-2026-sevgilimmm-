@@ -1,4 +1,10 @@
 {
+  "firestore": {
+    "rules": "sevgilim/firebase/firestore.rules"
+  },
+  "storage": {
+    "rules": "sevgilim/firebase/storage.rules"
+  },
   "functions": [
     {
       "source": "functions",

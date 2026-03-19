@@ -15,6 +15,23 @@ class AuthenticationService: ObservableObject {
     @Published var errorMessage: String?
     
     private let db = Firestore.firestore()
+    private var userListener: ListenerRegistration?
+    private var observedUserId: String?
+    
+    private nonisolated static func makeUser(from data: [String: Any], userId: String) -> User {
+        let preferencesData = data["notificationPreferences"] as? [String: Any] ?? [:]
+        return User(
+            id: userId,
+            email: data["email"] as? String ?? "",
+            name: data["name"] as? String ?? "",
+            profileImageURL: data["profileImageURL"] as? String,
+            relationshipId: data["relationshipId"] as? String,
+            createdAt: (data["createdAt"] as? Timestamp)?.dateValue() ?? Date(),
+            fcmTokens: data["fcmTokens"] as? [String],
+            notificationPreferences: NotificationPreferences(dictionary: preferencesData),
+            unreadNotificationCount: data["unreadNotificationCount"] as? Int ?? 0
+        )
+    }
     
     init() {
         checkAuthStatus()
@@ -37,14 +54,18 @@ class AuthenticationService: ObservableObject {
                 profileImageURL: nil,
                 relationshipId: nil,
                 createdAt: Date(),
-                fcmTokens: []
+                fcmTokens: [],
+                notificationPreferences: .default,
+                unreadNotificationCount: 0
             )
             
             try await db.collection("users").document(result.user.uid).setData([
                 "email": email,
                 "name": name,
                 "createdAt": Timestamp(date: Date()),
-                "fcmTokens": []
+                "fcmTokens": [],
+                "notificationPreferences": NotificationPreferences.default.firestoreData,
+                "unreadNotificationCount": 0
             ])
             
             await MainActor.run {
@@ -52,6 +73,7 @@ class AuthenticationService: ObservableObject {
                 self.isAuthenticated = true
                 PushNotificationManager.shared.syncTokenWithCurrentUser()
             }
+            fetchUserData(userId: result.user.uid)
         } catch {
             await MainActor.run {
                 self.errorMessage = error.localizedDescription
@@ -76,6 +98,7 @@ class AuthenticationService: ObservableObject {
         do {
             PushNotificationManager.shared.unregisterCurrentToken()
             try Auth.auth().signOut()
+            stopUserListener()
             currentUser = nil
             isAuthenticated = false
         } catch {
@@ -98,7 +121,17 @@ class AuthenticationService: ObservableObject {
     }
     
     func fetchUserData(userId: String) {
-        db.collection("users").document(userId).getDocument { snapshot, error in
+        guard !userId.isEmpty else { return }
+        if observedUserId == userId, userListener != nil {
+            return
+        }
+        
+        stopUserListener()
+        observedUserId = userId
+        
+        userListener = db.collection("users").document(userId).addSnapshotListener { [weak self] snapshot, error in
+            guard let self = self else { return }
+            
             if let error = error {
                 Task { @MainActor in
                     self.errorMessage = error.localizedDescription
@@ -106,17 +139,8 @@ class AuthenticationService: ObservableObject {
                 return
             }
             
-            guard let data = snapshot?.data() else { return }
-            
-            let user = User(
-                id: userId,
-                email: data["email"] as? String ?? "",
-                name: data["name"] as? String ?? "",
-                profileImageURL: data["profileImageURL"] as? String,
-                relationshipId: data["relationshipId"] as? String,
-                createdAt: (data["createdAt"] as? Timestamp)?.dateValue() ?? Date(),
-                fcmTokens: data["fcmTokens"] as? [String]
-            )
+            guard let snapshot, let data = snapshot.data() else { return }
+            let user = Self.makeUser(from: data, userId: userId)
             
             Task { @MainActor in
                 self.currentUser = user
@@ -169,15 +193,7 @@ class AuthenticationService: ObservableObject {
             throw NSError(domain: "AuthenticationService", code: 404, userInfo: [NSLocalizedDescriptionKey: "User not found"])
         }
         
-        return User(
-            id: userId,
-            email: data["email"] as? String ?? "",
-            name: data["name"] as? String ?? "",
-            profileImageURL: data["profileImageURL"] as? String,
-            relationshipId: data["relationshipId"] as? String,
-            createdAt: (data["createdAt"] as? Timestamp)?.dateValue() ?? Date(),
-            fcmTokens: data["fcmTokens"] as? [String]
-        )
+        return Self.makeUser(from: data, userId: userId)
     }
     
     func updateRelationshipId(_ relationshipId: String) async throws {
@@ -188,6 +204,16 @@ class AuthenticationService: ObservableObject {
         ])
         
         fetchUserData(userId: userId)
+    }
+    
+    func updateNotificationPreferences(_ preferences: NotificationPreferences) async throws {
+        guard let userId = currentUser?.id else { return }
+        
+        try await db.collection("users").document(userId).updateData([
+            "notificationPreferences": preferences.firestoreData
+        ])
+        
+        currentUser?.notificationPreferences = preferences
     }
     
     func deleteAccount() async throws {
@@ -201,8 +227,15 @@ class AuthenticationService: ObservableObject {
         try await user.delete()
         
         await MainActor.run {
+            self.stopUserListener()
             self.currentUser = nil
             self.isAuthenticated = false
         }
+    }
+    
+    private func stopUserListener() {
+        userListener?.remove()
+        userListener = nil
+        observedUserId = nil
     }
 }

@@ -10,6 +10,7 @@ import CoreLocation
 import Combine
 import FirebaseFirestore
 import UserNotifications
+import UIKit
 
 @MainActor
 class ProximityService: NSObject, ObservableObject, CLLocationManagerDelegate {
@@ -27,6 +28,9 @@ class ProximityService: NSObject, ObservableObject, CLLocationManagerDelegate {
     @Published var proximityThreshold: Double {
         didSet {
             UserDefaults.standard.set(proximityThreshold, forKey: "proximityThreshold")
+            if isTrackingEnabled {
+                reconfigureLocationMonitoring()
+            }
             checkProximity() // Threshold değişince yeniden hesapla
         }
     }
@@ -43,9 +47,18 @@ class ProximityService: NSObject, ObservableObject, CLLocationManagerDelegate {
     private var locationManager: CLLocationManager?
     private var cancellables = Set<AnyCancellable>()
     private var currentUserId: String?
+    private var lastUploadedLocation: CLLocation?
+    private var lastLocationUploadTime: Date?
+    private var isUploadingLocation = false
     
     // Cooldown: 10 dakika
     private let notificationCooldown: TimeInterval = 10 * 60
+    private let minimumUploadInterval: TimeInterval = 5 * 60
+    private let minimumUploadDistance: CLLocationDistance = 250
+    private let minimumMeaningfulMovement: CLLocationDistance = 75
+    private let foregroundMinimumDistance: CLLocationDistance = 150
+    private let backgroundMinimumDistance: CLLocationDistance = 500
+    private let maximumAcceptedAccuracy: CLLocationAccuracy = 400
     
     // MARK: - Threshold Options
     static let thresholdOptions: [(label: String, value: Double)] = [
@@ -64,6 +77,7 @@ class ProximityService: NSObject, ObservableObject, CLLocationManagerDelegate {
         
         super.init()
         setupLocationManager()
+        setupLifecycleObservers()
     }
     
     // MARK: - Location Manager Setup
@@ -72,8 +86,24 @@ class ProximityService: NSObject, ObservableObject, CLLocationManagerDelegate {
         locationManager?.delegate = self
         locationManager?.desiredAccuracy = kCLLocationAccuracyHundredMeters
         locationManager?.allowsBackgroundLocationUpdates = true
-        locationManager?.pausesLocationUpdatesAutomatically = false
-        locationManager?.distanceFilter = 50 // 50 metre değişince güncelle
+        locationManager?.pausesLocationUpdatesAutomatically = true
+        locationManager?.distanceFilter = foregroundMinimumDistance
+    }
+    
+    private func setupLifecycleObservers() {
+        NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
+            .sink { [weak self] _ in
+                guard let self, self.isTrackingEnabled else { return }
+                self.reconfigureLocationMonitoring()
+            }
+            .store(in: &cancellables)
+        
+        NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)
+            .sink { [weak self] _ in
+                guard let self, self.isTrackingEnabled else { return }
+                self.reconfigureLocationMonitoring()
+            }
+            .store(in: &cancellables)
     }
     
     // MARK: - CLLocationManagerDelegate
@@ -81,12 +111,22 @@ class ProximityService: NSObject, ObservableObject, CLLocationManagerDelegate {
         guard let location = locations.last else { return }
         
         Task { @MainActor in
+            guard self.shouldAccept(location: location) else { return }
+            
+            if let previousLocation = self.userLocation,
+               location.distance(from: previousLocation) < self.minimumMeaningfulMovement {
+                return
+            }
+            
             self.userLocation = location
             self.checkProximity()
             
             // Firebase'e konum güncelle
             if let userId = self.currentUserId {
-                self.updateUserLocationToFirebase(userId: userId, location: location)
+                self.updateUserLocationToFirebaseIfNeeded(
+                    userId: userId,
+                    location: location
+                )
             }
         }
     }
@@ -98,7 +138,7 @@ class ProximityService: NSObject, ObservableObject, CLLocationManagerDelegate {
     nonisolated func locationManager(_ manager: CLLocationManager, didChangeAuthorization status: CLAuthorizationStatus) {
         Task { @MainActor in
             if status == .authorizedAlways || status == .authorizedWhenInUse {
-                self.locationManager?.startUpdatingLocation()
+                self.reconfigureLocationMonitoring()
             }
         }
     }
@@ -109,8 +149,9 @@ class ProximityService: NSObject, ObservableObject, CLLocationManagerDelegate {
         self.currentUserId = userId
         
         if isTrackingEnabled {
-            // Zaten tracking açıksa, sadece konumları yeniden al ve hesapla
-            forceRefresh()
+            // Zaten tracking açıksa, modları yeniden ayarla ve hafif refresh yap
+            reconfigureLocationMonitoring()
+            forceRefresh(forceUpload: false)
             print("🔄 Proximity tracking refreshed")
             return
         }
@@ -121,7 +162,7 @@ class ProximityService: NSObject, ObservableObject, CLLocationManagerDelegate {
         startListeningToPartnerLocation(partnerId: partnerId)
         
         // Konum güncellemelerini başlat
-        startLocationUpdates()
+        reconfigureLocationMonitoring()
         
         print("✅ Proximity tracking started for user: \(userId), partner: \(partnerId)")
     }
@@ -131,16 +172,20 @@ class ProximityService: NSObject, ObservableObject, CLLocationManagerDelegate {
         locationListener?.remove()
         locationListener = nil
         locationManager?.stopUpdatingLocation()
+        locationManager?.stopMonitoringSignificantLocationChanges()
         currentUserId = nil
         distanceToPartner = nil
         partnerLocation = nil
         userLocation = nil
+        lastUploadedLocation = nil
+        lastLocationUploadTime = nil
+        isUploadingLocation = false
         
         print("🔴 Proximity tracking stopped")
     }
     
     // MARK: - Start Location Updates
-    private func startLocationUpdates() {
+    private func reconfigureLocationMonitoring() {
         guard let locationManager = locationManager else { return }
         
         // Always authorization iste
@@ -151,19 +196,41 @@ class ProximityService: NSObject, ObservableObject, CLLocationManagerDelegate {
             locationManager.requestAlwaysAuthorization()
         }
         
-        // Konum güncellemelerini başlat
-        if status == .authorizedAlways || status == .authorizedWhenInUse {
+        guard status == .authorizedAlways || status == .authorizedWhenInUse else {
+            return
+        }
+        
+        let isForeground = UIApplication.shared.applicationState == .active
+        
+        if isForeground {
+            locationManager.desiredAccuracy = kCLLocationAccuracyHundredMeters
+            locationManager.distanceFilter = max(
+                foregroundMinimumDistance,
+                proximityThreshold / 2
+            )
+            locationManager.stopMonitoringSignificantLocationChanges()
             locationManager.startUpdatingLocation()
+        } else {
+            locationManager.desiredAccuracy = kCLLocationAccuracyKilometer
+            locationManager.distanceFilter = max(
+                backgroundMinimumDistance,
+                proximityThreshold
+            )
+            locationManager.stopUpdatingLocation()
+            locationManager.startMonitoringSignificantLocationChanges()
+        }
+        
+        // İlk konum varsa hemen kullan
+        if let location = locationManager.location,
+           shouldAccept(location: location) {
+            self.userLocation = location
+            checkProximity()
             
-            // İlk konum varsa hemen kullan
-            if let location = locationManager.location {
-                self.userLocation = location
-                checkProximity()
-                
-                // Firebase'e ilk konumu da gönder
-                if let userId = currentUserId {
-                    updateUserLocationToFirebase(userId: userId, location: location)
-                }
+            if let userId = currentUserId {
+                updateUserLocationToFirebaseIfNeeded(
+                    userId: userId,
+                    location: location
+                )
             }
         }
     }
@@ -206,6 +273,18 @@ class ProximityService: NSObject, ObservableObject, CLLocationManagerDelegate {
     }
     
     // MARK: - Update User Location to Firebase
+    private func updateUserLocationToFirebaseIfNeeded(
+        userId: String,
+        location: CLLocation,
+        force: Bool = false
+    ) {
+        guard !isUploadingLocation else { return }
+        guard shouldUpload(location: location, force: force) else { return }
+        
+        isUploadingLocation = true
+        updateUserLocationToFirebase(userId: userId, location: location)
+    }
+    
     private func updateUserLocationToFirebase(userId: String, location: CLLocation) {
         let locationData: [String: Any] = [
             "latitude": location.coordinate.latitude,
@@ -217,16 +296,24 @@ class ProximityService: NSObject, ObservableObject, CLLocationManagerDelegate {
         db.collection("userLocations")
             .document(userId)
             .setData(locationData, merge: true) { error in
+                Task { @MainActor in
+                    self.isUploadingLocation = false
+                }
+                
                 if let error = error {
                     print("❌ Location update error: \(error.localizedDescription)")
                 } else {
+                    Task { @MainActor in
+                        self.lastUploadedLocation = location
+                        self.lastLocationUploadTime = Date()
+                    }
                     print("📍 Location updated")
                 }
             }
     }
     
     // MARK: - Force Refresh (can be called from outside)
-    func forceRefresh() {
+    func forceRefresh(forceUpload: Bool = true) {
         // Mevcut konumu al ve hesapla
         if let location = locationManager?.location {
             self.userLocation = location
@@ -235,8 +322,42 @@ class ProximityService: NSObject, ObservableObject, CLLocationManagerDelegate {
         
         // Firebase'e konumu güncelle
         if let userId = currentUserId, let location = userLocation {
-            updateUserLocationToFirebase(userId: userId, location: location)
+            updateUserLocationToFirebaseIfNeeded(
+                userId: userId,
+                location: location,
+                force: forceUpload
+            )
         }
+    }
+    
+    private func shouldAccept(location: CLLocation) -> Bool {
+        guard location.horizontalAccuracy >= 0 else { return false }
+        
+        if location.horizontalAccuracy <= maximumAcceptedAccuracy {
+            return true
+        }
+        
+        // İlk konum daha kaba da olsa kabul edilsin
+        return userLocation == nil
+    }
+    
+    private func shouldUpload(location: CLLocation, force: Bool) -> Bool {
+        if force {
+            return true
+        }
+        
+        guard location.horizontalAccuracy >= 0 else { return false }
+        
+        if let lastLocationUploadTime,
+           Date().timeIntervalSince(lastLocationUploadTime) >= minimumUploadInterval {
+            return true
+        }
+        
+        guard let lastUploadedLocation else {
+            return true
+        }
+        
+        return location.distance(from: lastUploadedLocation) >= minimumUploadDistance
     }
     
     // MARK: - Check Proximity

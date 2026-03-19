@@ -18,6 +18,9 @@ struct PhotosView: View {
     @State private var isShowingViewer = false
     @State private var sortOption: PhotoSortOption = .newest
     @State private var gridSize: PhotoGridSize = .medium
+    @State private var searchText = ""
+    @State private var mediaFilter: PhotoMediaFilter = .all
+    @State private var showingFilterSheet = false
     
     enum PhotoSortOption: String, CaseIterable {
         case newest = "En Yeni"
@@ -27,6 +30,24 @@ struct PhotosView: View {
     
     private var gridColumns: [GridItem] {
         [GridItem(.adaptive(minimum: gridSize.minWidth), spacing: gridSize.columnSpacing, alignment: .top)]
+    }
+    
+    enum PhotoMediaFilter: String, CaseIterable {
+        case all = "Tümü"
+        case photos = "Fotoğraf"
+        case videos = "Video"
+        case tagged = "Etiketli"
+        case located = "Konumlu"
+        
+        var systemImage: String {
+            switch self {
+            case .all: return "square.stack.3d.down.right.fill"
+            case .photos: return "photo.fill"
+            case .videos: return "video.fill"
+            case .tagged: return "number"
+            case .located: return "mappin.and.ellipse"
+            }
+        }
     }
     
     enum PhotoGridSize: String, CaseIterable {
@@ -50,11 +71,35 @@ struct PhotosView: View {
             }
         }
         
+        var detailsHeight: CGFloat {
+            switch self {
+            case .compact: return 0
+            case .medium: return 56
+            case .spacious: return 74
+            }
+        }
+        
+        var titleHeight: CGFloat {
+            switch self {
+            case .compact: return 0
+            case .medium: return 24
+            case .spacious: return 42
+            }
+        }
+        
+        var titleLineLimit: Int {
+            switch self {
+            case .compact: return 1
+            case .medium: return 1
+            case .spacious: return 2
+            }
+        }
+        
         var cardHeight: CGFloat {
             switch self {
             case .compact: return tileHeight
-            case .medium: return tileHeight + 70
-            case .spacious: return tileHeight + 90
+            case .medium: return tileHeight + detailsHeight + 36
+            case .spacious: return tileHeight + detailsHeight + 36
             }
         }
         
@@ -83,98 +128,48 @@ struct PhotosView: View {
             )
             .ignoresSafeArea()
             
-            VStack(spacing: 0) {
-                // Compact Header
-                HStack(spacing: 12) {
-                    Image(systemName: "photo.stack.fill")
-                        .font(.system(size: 24))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [.blue, .cyan],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                    
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Fotoğraflarımız")
-                            .font(.title3)
-                            .fontWeight(.bold)
-                        
-                        Text("Birlikte çektiğimiz fotoğraflar")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    Spacer()
-                }
-                .padding(.top, 10)
-                .padding(.horizontal, 20)
-                .padding(.bottom, 10)
-                
-                Picker("", selection: $sortOption) {
-                    ForEach(PhotoSortOption.allCases, id: \.self) { option in
-                        Text(option.rawValue).tag(option)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal, 20)
-                .padding(.bottom, 15)
-                
-                Picker("", selection: $gridSize) {
-                    ForEach(PhotoGridSize.allCases, id: \.self) { size in
-                        Text(size.rawValue).tag(size)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal, 20)
-                .padding(.bottom, 12)
-                
-                // Content
+            Group {
                 if photoService.photos.isEmpty {
-                    VStack(spacing: 20) {
-                        Image(systemName: "photo")
-                            .font(.system(size: 60))
-                            .foregroundColor(.secondary.opacity(0.6))
-                        
-                        VStack(spacing: 8) {
-                            Text("Henüz fotoğraf yok")
-                                .font(.headline)
-                                .foregroundColor(.primary)
-                            
-                            Text("Güzel anlarınızı fotoğraf olarak ekleyin")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                                .multilineTextAlignment(.center)
-                        }
-                        
-                        Button(action: { showingAddPhoto = true }) {
-                            Label("İlk Fotoğrafı Ekle", systemImage: "plus.circle.fill")
-                                .font(.headline)
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 24)
-                                .padding(.vertical, 12)
-                                .background(themeManager.currentTheme.primaryColor)
-                                .cornerRadius(12)
-                        }
+                    VStack(spacing: 0) {
+                        headerSection
+                        controlsSection
+                        emptyLibraryState
                     }
-                    .frame(maxHeight: .infinity)
+                } else if visiblePhotoItems.isEmpty {
+                    VStack(spacing: 0) {
+                        headerSection
+                        controlsSection
+                        filteredEmptyState
+                    }
                 } else {
                     ScrollView {
-                        LazyVGrid(columns: gridColumns, spacing: gridSize.columnSpacing) {
-                            ForEach(sortedPhotoItems) { item in
-                                PhotoCardModern(photo: item.photo, style: gridSize)
-                                    .onTapGesture {
-                                        guard !photoService.photos.isEmpty && item.originalIndex < photoService.photos.count else {
-                                            return
-                                        }
-                                        selectedPhotoIndex = item.originalIndex
-                                        isShowingViewer = true
+                        VStack(spacing: 0) {
+                            headerSection
+                            controlsSection
+                            
+                            VStack(spacing: 18) {
+                                HStack {
+                                    Text(resultsSummaryText)
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundColor(.secondary)
+                                    Spacer()
+                                }
+                                .padding(.horizontal, 16)
+                                
+                                LazyVGrid(columns: gridColumns, spacing: gridSize.columnSpacing) {
+                                    ForEach(Array(visiblePhotoItems.enumerated()), id: \.element.id) { index, item in
+                                        PhotoCardModern(photo: item.photo, style: gridSize)
+                                            .onTapGesture {
+                                                guard !visiblePhotos.isEmpty else { return }
+                                                selectedPhotoIndex = index
+                                                isShowingViewer = true
+                                            }
                                     }
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.bottom, 24)
                             }
                         }
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 24)
                     }
                     .overlay(alignment: .top) {
                         if photoService.isLoading {
@@ -212,13 +207,23 @@ struct PhotosView: View {
                 .environmentObject(authService)
                 .environmentObject(themeManager)
         }
+        .sheet(isPresented: $showingFilterSheet) {
+            PhotoFiltersSheet(
+                mediaFilter: $mediaFilter,
+                sortOption: $sortOption,
+                gridSize: $gridSize,
+                tint: themeManager.currentTheme.primaryColor,
+                showsResetAction: hasCustomControlSelections,
+                onReset: resetControlSelections
+            )
+        }
         .fullScreenCover(isPresented: $isShowingViewer) {
-            FullScreenPhotoViewer(currentIndex: $selectedPhotoIndex) {
+            FullScreenPhotoViewer(currentIndex: $selectedPhotoIndex, photos: visiblePhotos) {
                 isShowingViewer = false
             }
             .environmentObject(photoService)
         }
-        .onChange(of: photoService.photos.count) { _, newCount in
+        .onChange(of: visiblePhotos.count) { _, newCount in
             if newCount == 0 {
                 isShowingViewer = false
                 selectedPhotoIndex = 0
@@ -242,8 +247,177 @@ extension PhotosView {
         }
     }
     
-    private var sortedPhotoItems: [IndexedPhoto] {
-        let items = photoService.photos.enumerated().map { IndexedPhoto(photo: $0.element, originalIndex: $0.offset) }
+    private var normalizedSearchText: String {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    
+    private var hasActiveFilters: Bool {
+        mediaFilter != .all || !normalizedSearchText.isEmpty
+    }
+    
+    private var hasCustomControlSelections: Bool {
+        mediaFilter != .all || sortOption != .newest || gridSize != .medium
+    }
+    
+    private var allPhotoItems: [IndexedPhoto] {
+        photoService.photos.enumerated().map { IndexedPhoto(photo: $0.element, originalIndex: $0.offset) }
+    }
+    
+    private var filteredPhotoItems: [IndexedPhoto] {
+        allPhotoItems.filter { item in
+            matchesMediaFilter(item.photo) && matchesSearch(item.photo)
+        }
+    }
+    
+    private var visiblePhotoItems: [IndexedPhoto] {
+        sort(items: filteredPhotoItems)
+    }
+    
+    private var visiblePhotos: [Photo] {
+        visiblePhotoItems.map(\.photo)
+    }
+    
+    private var resultsSummaryText: String {
+        if hasActiveFilters {
+            return "\(visiblePhotos.count) sonuç gösteriliyor"
+        }
+        return "\(visiblePhotos.count) içerik albümde kayıtlı"
+    }
+    
+    private var headerSection: some View {
+        SectionHeroHeader(
+            systemImage: "photo.stack.fill",
+            iconColors: [themeManager.currentTheme.primaryColor, themeManager.currentTheme.secondaryColor],
+            title: "Fotoğraflarımız",
+            subtitle: hasActiveFilters ? "Aradığın anı daha hızlı bul" : "Birlikte çektiğiniz anılar burada",
+            countValue: "\(photoService.photos.count)",
+            countTint: themeManager.currentTheme.primaryColor,
+            trailingContent: AnyView(filterMenuButton)
+        )
+    }
+    
+    private var controlsSection: some View {
+        searchField
+            .padding(.bottom, 8)
+    }
+    
+    private var filterMenuButton: some View {
+        Button {
+            showingFilterSheet = true
+        } label: {
+            SectionRoundIconButton(
+                systemImage: "slider.horizontal.3",
+                tint: themeManager.currentTheme.primaryColor,
+                emphasized: hasCustomControlSelections
+            )
+        }
+        .buttonStyle(.plain)
+    }
+    
+    private var searchField: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .foregroundColor(.secondary)
+                .font(.system(size: 18, weight: .medium))
+            
+            TextField("Başlık, konum veya etiket ara", text: $searchText)
+                .textInputAutocapitalization(.never)
+                .disableAutocorrection(true)
+            
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(themeManager.currentTheme.primaryColor.opacity(0.08), lineWidth: 1)
+        )
+        .padding(.horizontal, 16)
+    }
+    
+    private var emptyLibraryState: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "photo")
+                .font(.system(size: 60))
+                .foregroundColor(.secondary.opacity(0.6))
+            
+            VStack(spacing: 8) {
+                Text("Henüz fotoğraf yok")
+                    .font(.headline)
+                    .foregroundColor(.primary)
+                
+                Text("Güzel anlarınızı fotoğraf olarak ekleyin")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            
+            Button(action: { showingAddPhoto = true }) {
+                Label("İlk Fotoğrafı Ekle", systemImage: "plus.circle.fill")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 12)
+                    .background(themeManager.currentTheme.primaryColor)
+                    .cornerRadius(12)
+            }
+        }
+        .frame(maxHeight: .infinity)
+    }
+    
+    private var filteredEmptyState: some View {
+        VStack(spacing: 18) {
+            Image(systemName: "sparkle.magnifyingglass")
+                .font(.system(size: 56))
+                .foregroundColor(themeManager.currentTheme.primaryColor.opacity(0.8))
+            
+            VStack(spacing: 8) {
+                Text("Eşleşen fotoğraf bulunamadı")
+                    .font(.headline)
+                
+                Text("Aramayı değiştir veya filtreleri temizleyip tüm albümü tekrar göster.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            
+            Button {
+                clearFilters()
+            } label: {
+                Label("Filtreleri Temizle", systemImage: "line.3.horizontal.decrease.circle.fill")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 22)
+                    .padding(.vertical, 12)
+                    .background(themeManager.currentTheme.primaryColor)
+                    .cornerRadius(12)
+            }
+        }
+        .padding(.horizontal, 28)
+        .frame(maxHeight: .infinity)
+    }
+    
+    private func clearFilters() {
+        searchText = ""
+        mediaFilter = .all
+    }
+    
+    private func resetControlSelections() {
+        mediaFilter = .all
+        sortOption = .newest
+        gridSize = .medium
+    }
+    
+    private func sort(items: [IndexedPhoto]) -> [IndexedPhoto] {
         switch sortOption {
         case .newest:
             return items.sorted { $0.photo.date > $1.photo.date }
@@ -255,6 +429,221 @@ extension PhotosView {
             }
         }
     }
+    
+    private func matchesMediaFilter(_ photo: Photo) -> Bool {
+        switch mediaFilter {
+        case .all:
+            return true
+        case .photos:
+            return !photo.isVideo
+        case .videos:
+            return photo.isVideo
+        case .tagged:
+            return !(tags(for: photo).isEmpty)
+        case .located:
+            guard let location = photo.location else { return false }
+            return !location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+    }
+    
+    private func matchesSearch(_ photo: Photo) -> Bool {
+        guard !normalizedSearchText.isEmpty else { return true }
+        
+        let query = normalizedSearchText.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+        let searchableTokens = [
+            photo.title,
+            photo.location,
+            DateFormatter.displayFormat.string(from: photo.date)
+        ].compactMap { $0 } + tags(for: photo)
+        
+        return searchableTokens.contains { token in
+            token.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+                .contains(query)
+        }
+    }
+    
+    private func tags(for photo: Photo) -> [String] {
+        photo.tags?.flatMap { [$0, "#\($0)"] } ?? []
+    }
+}
+
+private struct PhotoFiltersSheet: View {
+    @Binding var mediaFilter: PhotosView.PhotoMediaFilter
+    @Binding var sortOption: PhotosView.PhotoSortOption
+    @Binding var gridSize: PhotosView.PhotoGridSize
+    
+    let tint: Color
+    let showsResetAction: Bool
+    let onReset: () -> Void
+    
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    filterSection(title: "Göster") {
+                        ForEach(PhotosView.PhotoMediaFilter.allCases, id: \.self) { filter in
+                            FilterOptionRow(
+                                title: filter.rawValue,
+                                systemImage: filter.systemImage,
+                                isSelected: mediaFilter == filter,
+                                tint: tint
+                            ) {
+                                mediaFilter = filter
+                            }
+                        }
+                    }
+                    
+                    filterSection(title: "Sırala") {
+                        ForEach(PhotosView.PhotoSortOption.allCases, id: \.self) { option in
+                            FilterOptionRow(
+                                title: option.rawValue,
+                                systemImage: sortIcon(for: option),
+                                isSelected: sortOption == option,
+                                tint: tint
+                            ) {
+                                sortOption = option
+                            }
+                        }
+                    }
+                    
+                    filterSection(title: "Görünüm") {
+                        ForEach(PhotosView.PhotoGridSize.allCases, id: \.self) { size in
+                            FilterOptionRow(
+                                title: size.rawValue,
+                                systemImage: gridIcon(for: size),
+                                isSelected: gridSize == size,
+                                tint: tint
+                            ) {
+                                gridSize = size
+                            }
+                        }
+                    }
+                    
+                    if showsResetAction {
+                        Button {
+                            onReset()
+                        } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: "arrow.counterclockwise")
+                                    .font(.system(size: 15, weight: .semibold))
+                                Text("Varsayılana Dön")
+                                    .font(.subheadline.weight(.semibold))
+                                Spacer()
+                            }
+                            .foregroundColor(tint)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 14)
+                            .background(
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .fill(tint.opacity(0.10))
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(20)
+            }
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle("Filtreler")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Kapat") {
+                        dismiss()
+                    }
+                }
+                
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Bitti") {
+                        dismiss()
+                    }
+                    .fontWeight(.semibold)
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+    }
+    
+    private func filterSection<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title)
+                .font(.headline)
+                .foregroundStyle(.primary)
+            
+            VStack(spacing: 10) {
+                content()
+            }
+        }
+    }
+    
+    private func sortIcon(for option: PhotosView.PhotoSortOption) -> String {
+        switch option {
+        case .newest:
+            return "arrow.down.circle.fill"
+        case .oldest:
+            return "arrow.up.circle.fill"
+        case .alphabetical:
+            return "textformat.abc"
+        }
+    }
+    
+    private func gridIcon(for size: PhotosView.PhotoGridSize) -> String {
+        switch size {
+        case .compact:
+            return "square.grid.3x3.fill"
+        case .medium:
+            return "square.grid.2x2.fill"
+        case .spacious:
+            return "rectangle.grid.1x2.fill"
+        }
+    }
+}
+
+private struct FilterOptionRow: View {
+    let title: String
+    let systemImage: String
+    let isSelected: Bool
+    let tint: Color
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(isSelected ? .white : tint)
+                    .frame(width: 34, height: 34)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(isSelected ? tint : tint.opacity(0.12))
+                    )
+                
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                
+                Spacer()
+                
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(isSelected ? tint : .secondary.opacity(0.45))
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(isSelected ? tint.opacity(0.10) : Color(.secondarySystemBackground))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(isSelected ? tint.opacity(0.28) : Color.clear, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
 }
 
 // Modern Photo Card with Caching
@@ -263,9 +652,32 @@ struct PhotoCardModern: View {
     let style: PhotosView.PhotoGridSize
     @EnvironmentObject var themeManager: ThemeManager
     
+    private var trimmedTitle: String? {
+        let trimmed = photo.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
+    
+    private var trimmedLocation: String? {
+        let trimmed = photo.location?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
+    
+    private var cleanedTags: [String] {
+        (photo.tags ?? []).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+    
+    private var primaryTag: String? {
+        cleanedTags.first
+    }
+    
+    private var remainingTagCount: Int {
+        max(0, cleanedTags.count - 1)
+    }
+    
     var body: some View {
         VStack(alignment: .leading, spacing: style.showsDetails ? 12 : 0) {
-            ZStack(alignment: .topLeading) {
+            ZStack {
                 CachedAsyncImage(url: photo.displayThumbnailURL, thumbnail: true) { image, size in
                     let isLandscape = size.width > size.height && size.width > 0 && size.height > 0
                     
@@ -311,76 +723,88 @@ struct PhotoCardModern: View {
                             .shadow(color: .black.opacity(0.4), radius: 8, x: 0, y: 4)
                     }
                 }
-                
-                if let location = photo.location, !location.isEmpty {
-                    HStack(spacing: 6) {
-                        Image(systemName: "mappin.and.ellipse")
-                        Text(location)
+                .overlay(alignment: .topLeading) {
+                    if !style.showsDetails, let location = trimmedLocation {
+                        overlayChip(systemImage: "mappin.and.ellipse", text: location)
+                            .padding(12)
                     }
-                    .font(.caption2)
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(Color.black.opacity(0.45), in: Capsule())
-                    .padding(12)
                 }
-                
-                if !style.showsDetails {
-                    HStack(spacing: 6) {
-                        Image(systemName: "calendar")
-                        Text(photo.date, formatter: DateFormatter.displayFormat)
+                .overlay(alignment: .bottomLeading) {
+                    if style.showsDetails {
+                        if let primaryTag {
+                            HStack(spacing: 6) {
+                                Text("#\(primaryTag)")
+                                    .lineLimit(1)
+                                if remainingTagCount > 0 {
+                                    Text("+\(remainingTagCount)")
+                                }
+                            }
+                            .font(.caption2.weight(.semibold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(themeManager.currentTheme.primaryColor.opacity(0.88), in: Capsule())
+                            .padding(12)
+                        }
+                    } else {
+                        HStack(spacing: 6) {
+                            Image(systemName: "calendar")
+                            Text(photo.date, formatter: DateFormatter.displayFormat)
+                        }
+                        .font(.caption2)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color.black.opacity(0.45), in: Capsule())
+                        .padding([.leading, .bottom], 12)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
                     }
-                    .font(.caption2)
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(Color.black.opacity(0.45), in: Capsule())
-                    .padding([.leading, .bottom], 12)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
                 }
             }
             
             if style.showsDetails {
-                VStack(alignment: .leading, spacing: 8) {
-                    if let title = photo.title, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        Text(title)
-                            .font(.headline)
-                            .foregroundColor(.primary)
-                            .lineLimit(2)
+                VStack(alignment: .leading, spacing: 10) {
+                    Group {
+                        if let trimmedTitle {
+                            Text(trimmedTitle)
+                                .font(.headline)
+                                .foregroundColor(.primary)
+                                .lineLimit(style.titleLineLimit)
+                                .frame(maxWidth: .infinity, minHeight: style.titleHeight, maxHeight: style.titleHeight, alignment: .topLeading)
+                        } else {
+                            Color.clear
+                                .frame(maxWidth: .infinity, minHeight: style.titleHeight, maxHeight: style.titleHeight)
+                        }
                     }
                     
                     HStack(spacing: 8) {
-                        Image(systemName: "calendar")
-                            .font(.caption)
-                            .foregroundColor(themeManager.currentTheme.primaryColor)
-                        Text(photo.date, formatter: DateFormatter.displayFormat)
-                            .font(.caption)
+                        HStack(spacing: 6) {
+                            Image(systemName: "calendar")
+                                .font(.caption)
+                                .foregroundColor(themeManager.currentTheme.primaryColor)
+                            Text(photo.date, formatter: DateFormatter.displayFormat)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .layoutPriority(1)
+                        
+                        Spacer(minLength: 6)
+                        
+                        if let location = trimmedLocation {
+                            HStack(spacing: 5) {
+                                Image(systemName: "mappin.and.ellipse")
+                                    .font(.caption2)
+                                Text(location)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.85)
+                            }
+                            .font(.caption2.weight(.semibold))
                             .foregroundColor(.secondary)
-                    }
-                    
-                    if let tags = photo.tags, !tags.isEmpty {
-                        HStack(spacing: 8) {
-                            ForEach(tags.prefix(3), id: \.self) { tag in
-                                Text("#\(tag)")
-                                    .font(.caption2)
-                                    .fontWeight(.semibold)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 5)
-                                    .background(
-                                        Capsule()
-                                            .fill(themeManager.currentTheme.primaryColor.opacity(0.18))
-                                    )
-                                    .foregroundColor(themeManager.currentTheme.primaryColor)
-                            }
-                            if tags.count > 3 {
-                                Text("+\(tags.count - 3)")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                            }
                         }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(height: style.detailsHeight, alignment: .top)
             }
         }
         .padding(style.showsDetails ? 12 : 0)
@@ -401,7 +825,20 @@ struct PhotoCardModern: View {
             }
         )
         .shadow(color: .black.opacity(style.showsDetails ? 0.1 : 0.0), radius: style.showsDetails ? 12 : 0, x: 0, y: style.showsDetails ? 6 : 0)
-        .frame(minHeight: style.cardHeight, alignment: .top)
+        .frame(height: style.cardHeight, alignment: .top)
+    }
+    
+    private func overlayChip(systemImage: String, text: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: systemImage)
+            Text(text)
+                .lineLimit(1)
+        }
+        .font(.caption2)
+        .foregroundColor(.white)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Color.black.opacity(0.45), in: Capsule())
     }
 }
 

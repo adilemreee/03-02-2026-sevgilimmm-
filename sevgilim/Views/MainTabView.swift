@@ -4,6 +4,8 @@
 //
 
 import SwiftUI
+import UIKit
+import UserNotifications
 
 struct MainTabView: View {
     @EnvironmentObject var themeManager: ThemeManager
@@ -23,6 +25,7 @@ struct MainTabView: View {
     @EnvironmentObject var secretVaultService: SecretVaultService
     @EnvironmentObject var moodService: MoodService
     @EnvironmentObject var proximityService: ProximityService
+    @EnvironmentObject var notificationHistoryService: NotificationHistoryService
     @EnvironmentObject var navigationRouter: AppNavigationRouter
     
     // MARK: - Cached ViewModel (prevents recreation on tab switch)
@@ -85,12 +88,13 @@ struct MainTabView: View {
         .onAppear {
             startServicesStaggered()
             handlePendingNavigation()
+            syncNotificationBadge(authService.currentUser?.unreadNotificationCount ?? 0)
         }
         // Single consolidated onChange for navigation — replaces 11 separate onChange listeners
         .onChange(of: navigationRouter.pendingNavigation) { _, target in
             guard let target = target else { return }
             switch target {
-            case .chat, .surprises, .specialDays, .movies, .plans, .songs, .places, .secretVault:
+            case .home, .chat, .surprises, .specialDays, .movies, .plans, .songs, .places, .secretVault:
                 selectedTab = 0
             case .photos:
                 selectedTab = 2
@@ -114,6 +118,12 @@ struct MainTabView: View {
                 }
             }
         }
+        .onChange(of: authService.currentUser?.unreadNotificationCount ?? 0) { _, unreadCount in
+            syncNotificationBadge(unreadCount)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+            syncNotificationBadge(authService.currentUser?.unreadNotificationCount ?? 0)
+        }
     }
     
     /// Staggered service start to avoid CPU spike on launch
@@ -128,6 +138,7 @@ struct MainTabView: View {
         // Phase 1: Critical — needed for home screen immediately
         relationshipService.listenToRelationship(relationshipId: relationshipId)
         surpriseService.listenToSurprises(relationshipId: relationshipId, userId: userId)
+        notificationHistoryService.listenToNotifications(userId: userId)
         
         // Phase 2: Secondary data — needed when user scrolls or switches tabs
         Task { @MainActor in
@@ -154,7 +165,7 @@ struct MainTabView: View {
     private func handlePendingNavigation() {
         guard let target = navigationRouter.pendingNavigation else { return }
         switch target {
-        case .chat, .surprises, .specialDays, .movies, .plans, .songs, .places, .secretVault:
+        case .home, .chat, .surprises, .specialDays, .movies, .plans, .songs, .places, .secretVault:
             selectedTab = 0
         case .photos:
             selectedTab = 2
@@ -181,6 +192,20 @@ struct MainTabView: View {
             messageService: messageService,
             moodService: moodService
         )
+    }
+    
+    private func syncNotificationBadge(_ count: Int) {
+        let safeCount = max(count, 0)
+        
+        if #available(iOS 17.0, *) {
+            UNUserNotificationCenter.current().setBadgeCount(safeCount) { error in
+                if let error = error {
+                    print("Rozet eşitleme hatası: \(error.localizedDescription)")
+                }
+            }
+        } else {
+            UIApplication.shared.applicationIconBadgeNumber = safeCount
+        }
     }
 }
 

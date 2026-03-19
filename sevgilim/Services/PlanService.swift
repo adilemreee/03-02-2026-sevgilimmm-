@@ -83,7 +83,7 @@ class PlanService: ObservableObject {
         try await db.collection("plans").addDocument(data: data)
     }
     
-    func toggleCompletion(_ plan: Plan) async throws {
+    func toggleCompletion(_ plan: Plan, userId: String? = nil) async throws {
         guard let planId = plan.id else { return }
         
         let newStatus = !plan.isCompleted
@@ -95,11 +95,16 @@ class PlanService: ObservableObject {
             updates["completedAt"] = FieldValue.delete()
         }
         
+        if let userId {
+            updates["lastUpdatedBy"] = userId
+            updates["updatedBy"] = userId
+        }
+        
         try await db.collection("plans").document(planId).updateData(updates)
     }
     
     func updatePlan(_ plan: Plan, title: String, description: String?, 
-                   date: Date?, reminderEnabled: Bool) async throws {
+                   date: Date?, reminderEnabled: Bool, userId: String? = nil) async throws {
         guard let planId = plan.id else { return }
         
         var updates: [String: Any] = [
@@ -112,6 +117,11 @@ class PlanService: ObservableObject {
             updates["date"] = Timestamp(date: date)
         } else {
             updates["date"] = FieldValue.delete()
+        }
+        
+        if let userId {
+            updates["lastUpdatedBy"] = userId
+            updates["updatedBy"] = userId
         }
         
         try await db.collection("plans").document(planId).updateData(updates)

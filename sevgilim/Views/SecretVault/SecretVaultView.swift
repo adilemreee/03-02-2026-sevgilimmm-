@@ -90,6 +90,17 @@ struct SecretVaultContentView: View {
         filteredItems.enumerated().map { IndexedVaultItem(item: $0.element, displayIndex: $0.offset) }
     }
     
+    private var headerSubtitle: String {
+        switch filter {
+        case .all:
+            return "Aşkınıza özel saklanan anlar"
+        case .photos:
+            return "Kasadaki özel fotoğraflar"
+        case .videos:
+            return "Kasadaki özel videolar"
+        }
+    }
+    
     var body: some View {
         ZStack {
             LinearGradient(
@@ -196,32 +207,18 @@ struct SecretVaultContentView: View {
     }
     
     private var header: some View {
-        HStack(spacing: 14) {
-            Image(systemName: "lock.shield.fill")
-                .font(.system(size: 26))
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [themeManager.currentTheme.primaryColor, themeManager.currentTheme.accentColor],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-            
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Gizli Kasamız")
-                    .font(.title3)
-                    .fontWeight(.bold)
-                
-                Text("aşkımla özelimizz")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            
-            Spacer()
-        }
-        .padding(.horizontal, 20)
-        .padding(.top, 16)
-        .padding(.bottom, 12)
+        SectionHeroHeader(
+            systemImage: "lock.shield.fill",
+            iconColors: [
+                themeManager.currentTheme.primaryColor,
+                themeManager.currentTheme.accentColor
+            ],
+            title: "Gizli Kasamız",
+            subtitle: headerSubtitle,
+            countValue: "\(filteredItems.count)",
+            countTint: themeManager.currentTheme.primaryColor,
+            countLabel: filter == .all ? "Öğe" : "Filtre"
+        )
     }
     
     @ViewBuilder

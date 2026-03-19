@@ -13,6 +13,7 @@ struct FullScreenPhotoViewer: View {
     @EnvironmentObject private var photoService: PhotoService
     
     @Binding private var currentIndex: Int
+    private let photosOverride: [Photo]?
     private let onClose: () -> Void
     
     @State private var pageIndex: Int
@@ -22,7 +23,7 @@ struct FullScreenPhotoViewer: View {
     @State private var shareItems: [Any]?
     @State private var hasDismissed = false
     
-    private var photos: [Photo] { photoService.photos }
+    private var photos: [Photo] { photosOverride ?? photoService.photos }
     private var photoCount: Int { photos.count }
     
     private var clampedPageIndex: Int {
@@ -35,8 +36,9 @@ struct FullScreenPhotoViewer: View {
         return photos[clampedPageIndex]
     }
     
-    init(currentIndex: Binding<Int>, onClose: @escaping () -> Void) {
+    init(currentIndex: Binding<Int>, photos: [Photo]? = nil, onClose: @escaping () -> Void) {
         _currentIndex = currentIndex
+        self.photosOverride = photos
         self.onClose = onClose
         _pageIndex = State(initialValue: currentIndex.wrappedValue)
     }

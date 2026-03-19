@@ -1,109 +1,142 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    // Helper functions
-    function isSignedIn() {
+    function signedIn() {
       return request.auth != null && request.auth.uid != null;
     }
 
-    function userDocument() {
-      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid));
+    function uid() {
+      return request.auth.uid;
     }
 
-    function hasRelationship() {
-      return isSignedIn()
-          && firestore.exists(/databases/(default)/documents/users/$(request.auth.uid))
-          && userDocument().data.relationshipId != null;
+    function userExists(userId) {
+      return firestore.exists(/databases/(default)/documents/users/$(userId));
     }
 
-    function getRelationshipId() {
-      return hasRelationship() ? userDocument().data.relationshipId : null;
+    function userDocument(userId) {
+      return firestore.get(/databases/(default)/documents/users/$(userId));
     }
 
-    function isRelationshipMember(relId) {
-      return hasRelationship() && getRelationshipId() == relId;
+    function currentUserExists() {
+      return signedIn() && userExists(uid());
     }
 
-    function isDeleteOperation() {
-      return request.resource == null;
+    function currentRelationshipId() {
+      return currentUserExists() ? userDocument(uid()).data.relationshipId : null;
     }
 
-    function isVaultContentTypeAllowed() {
+    function isSelf(userId) {
+      return signedIn() && uid() == userId;
+    }
+
+    function isRelationshipMember(relationshipId) {
+      return currentUserExists()
+          && currentRelationshipId() != null
+          && currentRelationshipId() == relationshipId;
+    }
+
+    function sharesRelationshipWithUser(userId) {
+      return currentUserExists()
+          && userExists(userId)
+          && currentRelationshipId() != null
+          && userDocument(userId).data.relationshipId == currentRelationshipId();
+    }
+
+    function isImage() {
       return request.resource != null
-          && (
-              request.resource.contentType.matches('image/.*')
-              || request.resource.contentType.matches('video/.*')
-              || request.resource.contentType == 'application/octet-stream'
-          );
-    }
-
-    function isWithinVaultSizeLimit() {
-      return request.resource == null
-          || request.resource.size == null
-          || request.resource.size <= 50 * 1024 * 1024;
-    }
-
-    // Profile images - only owner can upload
-    match /profiles/{userId}/{allPaths=**} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() && request.auth.uid == userId;
-    }
-
-    // Stories - photos
-    match /relationships/{relationshipId}/stories/{fileName} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn()
-          && request.resource.size < 10 * 1024 * 1024
           && request.resource.contentType.matches('image/.*');
-      allow delete: if isSignedIn();
     }
 
-    // Stories - videos
-    match /relationships/{relationshipId}/stories/videos/{fileName} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn()
-          && request.resource.size < 50 * 1024 * 1024
+    function isVideo() {
+      return request.resource != null
           && request.resource.contentType.matches('video/.*');
-      allow delete: if isSignedIn();
     }
 
-    // Story thumbnails
-    match /relationships/{relationshipId}/stories/thumbnails/{fileName} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn()
-          && request.resource.size < 2 * 1024 * 1024
-          && request.resource.contentType.matches('image/.*');
-      allow delete: if isSignedIn();
+    function withinBytes(limit) {
+      return request.resource != null
+          && request.resource.size <= limit;
     }
 
-    // Surprises klasörü - authentication gerekli
-    match /surprises/{relationshipId}/{fileName} {
-      allow read, write: if isSignedIn();
+    match /profiles/{userId}/{allPaths=**} {
+      allow read: if isSelf(userId) || sharesRelationshipWithUser(userId);
+      allow create, update: if isSelf(userId)
+          && isImage()
+          && withinBytes(10 * 1024 * 1024);
+      allow delete: if isSelf(userId);
     }
 
-    // Relationship photos
-    match /relationships/{relationshipId}/photos/{allPaths=**} {
-      allow read, write: if isRelationshipMember(relationshipId);
-    }
-
-    // Relationship memories
-    match /relationships/{relationshipId}/memories/{allPaths=**} {
-      allow read, write: if isRelationshipMember(relationshipId);
-    }
-
-    // Chat messages
     match /relationships/{relationshipId}/messages/{allPaths=**} {
-      allow read, write: if isRelationshipMember(relationshipId);
+      allow read: if isRelationshipMember(relationshipId);
+      allow create, update: if isRelationshipMember(relationshipId)
+          && isImage()
+          && withinBytes(10 * 1024 * 1024);
+      allow delete: if isRelationshipMember(relationshipId);
     }
 
-    // Secret vault media
+    match /relationships/{relationshipId}/memories/{allPaths=**} {
+      allow read: if isRelationshipMember(relationshipId);
+      allow create, update: if isRelationshipMember(relationshipId)
+          && isImage()
+          && withinBytes(20 * 1024 * 1024);
+      allow delete: if isRelationshipMember(relationshipId);
+    }
+
+    match /relationships/{relationshipId}/photos/videos/{fileName} {
+      allow read: if isRelationshipMember(relationshipId);
+      allow create, update: if isRelationshipMember(relationshipId)
+          && isVideo()
+          && withinBytes(100 * 1024 * 1024);
+      allow delete: if isRelationshipMember(relationshipId);
+    }
+
+    match /relationships/{relationshipId}/photos/{allPaths=**} {
+      allow read: if isRelationshipMember(relationshipId);
+      allow create, update: if isRelationshipMember(relationshipId)
+          && isImage()
+          && withinBytes(20 * 1024 * 1024);
+      allow delete: if isRelationshipMember(relationshipId);
+    }
+
+    match /relationships/{relationshipId}/stories/videos/{fileName} {
+      allow read: if isRelationshipMember(relationshipId);
+      allow create, update: if isRelationshipMember(relationshipId)
+          && isVideo()
+          && withinBytes(50 * 1024 * 1024);
+      allow delete: if isRelationshipMember(relationshipId);
+    }
+
+    match /relationships/{relationshipId}/stories/thumbnails/{fileName} {
+      allow read: if isRelationshipMember(relationshipId);
+      allow create, update: if isRelationshipMember(relationshipId)
+          && isImage()
+          && withinBytes(2 * 1024 * 1024);
+      allow delete: if isRelationshipMember(relationshipId);
+    }
+
+    match /relationships/{relationshipId}/stories/{fileName} {
+      allow read: if isRelationshipMember(relationshipId);
+      allow create, update: if isRelationshipMember(relationshipId)
+          && isImage()
+          && withinBytes(10 * 1024 * 1024);
+      allow delete: if isRelationshipMember(relationshipId);
+    }
+
     match /relationships/{relationshipId}/secretVault/{filePath=**} {
       allow read: if isRelationshipMember(relationshipId);
+      allow create, update: if isRelationshipMember(relationshipId)
+          && (
+              (isImage() && withinBytes(50 * 1024 * 1024))
+              || (isVideo() && withinBytes(50 * 1024 * 1024))
+          );
+      allow delete: if isRelationshipMember(relationshipId);
+    }
 
-      allow write: if isRelationshipMember(relationshipId)
-          && (isDeleteOperation()
-              || (isVaultContentTypeAllowed()
-                  && isWithinVaultSizeLimit()));
+    match /surprises/{relationshipId}/{fileName} {
+      allow read: if isRelationshipMember(relationshipId);
+      allow create, update: if isRelationshipMember(relationshipId)
+          && isImage()
+          && withinBytes(10 * 1024 * 1024);
+      allow delete: if isRelationshipMember(relationshipId);
     }
   }
 }

@@ -65,6 +65,14 @@ class RelationshipService: ObservableObject {
     }
     
     func acceptInvitation(_ invitation: PartnerInvitation, receiverUserId: String, receiverName: String) async throws -> String {
+        guard let invitationId = invitation.id else {
+            throw NSError(
+                domain: "RelationshipService",
+                code: -1,
+                userInfo: [NSLocalizedDescriptionKey: "Invitation ID is missing"]
+            )
+        }
+        
         // Create relationship
         let relationshipRef = db.collection("relationships").document()
         
@@ -74,7 +82,8 @@ class RelationshipService: ObservableObject {
             "user1Name": invitation.senderName,
             "user2Name": receiverName,
             "startDate": Timestamp(date: invitation.relationshipStartDate),
-            "createdAt": Timestamp(date: Date())
+            "createdAt": Timestamp(date: Date()),
+            "invitationId": invitationId
         ])
         
         // Update both users' relationshipId
@@ -85,12 +94,11 @@ class RelationshipService: ObservableObject {
                         forDocument: db.collection("users").document(receiverUserId))
         
         // Update invitation status
-        if let invitationId = invitation.id {
-            batch.updateData([
-                "status": PartnerInvitation.InvitationStatus.accepted.rawValue,
-                "respondedAt": Timestamp(date: Date())
-            ], forDocument: db.collection("invitations").document(invitationId))
-        }
+        batch.updateData([
+            "status": PartnerInvitation.InvitationStatus.accepted.rawValue,
+            "respondedAt": Timestamp(date: Date()),
+            "relationshipId": relationshipRef.documentID
+        ], forDocument: db.collection("invitations").document(invitationId))
         
         try await batch.commit()
         

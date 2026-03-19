@@ -14,6 +14,12 @@ struct SongsView: View {
     @State private var searchText = ""
     @State private var selectedSong: Song?
     
+    private var headerSubtitle: String {
+        searchText.isEmpty ?
+        "Birlikte dinlediğiniz şarkılar" :
+        "Aradığın şarkıyı daha hızlı bul"
+    }
+    
     var filteredSongs: [Song] {
         if searchText.isEmpty {
             return songService.songs
@@ -41,33 +47,15 @@ struct SongsView: View {
                 .ignoresSafeArea()
                 
                 VStack(spacing: 0) {
-                    // Header
-                    HStack(spacing: 12) {
-                        Image(systemName: "music.note.list")
-                            .font(.system(size: 24))
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [.purple, .pink],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Şarkılarımız")
-                                .font(.title3)
-                                .fontWeight(.bold)
-                            
-                            Text("Birlikte dinlediğimiz şarkılar")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        
-                        Spacer()
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 10)
-                    .padding(.bottom, 15)
+                    SectionHeroHeader(
+                        systemImage: "music.note.list",
+                        iconColors: [.purple, .pink],
+                        title: "Şarkılarımız",
+                        subtitle: headerSubtitle,
+                        countValue: "\(filteredSongs.count)",
+                        countTint: .purple,
+                        countLabel: searchText.isEmpty ? "Şarkı" : "Sonuç"
+                    )
                     
                     // Search Bar
                     HStack {

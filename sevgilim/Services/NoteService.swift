@@ -80,14 +80,18 @@ class NoteService: ObservableObject {
         try await db.collection("notes").addDocument(data: data)
     }
     
-    func updateNote(_ note: Note, title: String, content: String) async throws {
+    func updateNote(_ note: Note, title: String, content: String, userId: String? = nil) async throws {
         guard let noteId = note.id else { return }
         
-        let updates: [String: Any] = [
+        var updates: [String: Any] = [
             "title": title,
             "content": content,
             "updatedAt": Timestamp(date: Date())
         ]
+        
+        if let userId {
+            updates["updatedBy"] = userId
+        }
         
         try await db.collection("notes").document(noteId).updateData(updates)
     }

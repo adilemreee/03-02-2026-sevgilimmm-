@@ -34,6 +34,12 @@ struct SpecialDaysView: View {
         filteredDays.filter { $0.isPast && !$0.isRecurring }.sorted { $0.date > $1.date }
     }
     
+    private var headerSubtitle: String {
+        searchText.isEmpty ?
+        "Takviminizde sakladığınız tarihler" :
+        "Aradığın özel günü daha hızlı bul"
+    }
+    
     var body: some View {
         NavigationView {
             ZStack {
@@ -49,33 +55,15 @@ struct SpecialDaysView: View {
                 .ignoresSafeArea()
                 
                 VStack(spacing: 0) {
-                    // Header
-                    HStack(spacing: 12) {
-                        Image(systemName: "calendar.badge.clock")
-                            .font(.system(size: 24))
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [.pink, .purple],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Özel Günler")
-                                .font(.title3)
-                                .fontWeight(.bold)
-                            
-                            Text("\(upcomingDays.count) yaklaşan gün")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        
-                        Spacer()
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 10)
-                    .padding(.bottom, 15)
+                    SectionHeroHeader(
+                        systemImage: "calendar.badge.clock",
+                        iconColors: [.pink, .purple],
+                        title: "Özel Günler",
+                        subtitle: headerSubtitle,
+                        countValue: "\(upcomingDays.count)",
+                        countTint: .pink,
+                        countLabel: "Yaklaşan"
+                    )
                     
                     // Search Bar
                     HStack {

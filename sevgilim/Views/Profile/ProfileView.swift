@@ -700,11 +700,15 @@ struct SettingsView: View {
 // MARK: - Notification Settings View
 struct NotificationSettingsView: View {
     @Environment(\.dismiss) var dismiss
+    @EnvironmentObject var authService: AuthenticationService
     @EnvironmentObject var themeManager: ThemeManager
     
     @State private var pushEnabled = PushNotificationManager.shared.notificationsEnabled
     @State private var permissionStatus: UNAuthorizationStatus = .notDetermined
     @State private var permissionMessage: String?
+    @State private var preferenceSyncError: String?
+    @State private var isSyncingPreferences = false
+    @State private var suppressPreferenceSync = false
     
     @AppStorage("notifyChatAlerts") private var chatAlertsEnabled = true
     @AppStorage("notifyMemoryAlerts") private var memoryAlertsEnabled = true
@@ -723,7 +727,9 @@ struct NotificationSettingsView: View {
                                 .foregroundColor(statusColor(for: permissionStatus))
                         }
                     }
-                    .onChange(of: pushEnabled, perform: handlePushToggle)
+                    .onChange(of: pushEnabled) { _, isEnabled in
+                        handlePushToggle(isEnabled)
+                    }
                     
                     if let permissionMessage {
                         Text(permissionMessage)
@@ -740,13 +746,28 @@ struct NotificationSettingsView: View {
                 
                 Section(header: Text("Bildirim Kategorileri")) {
                     Toggle("Sohbet bildirimleri", isOn: $chatAlertsEnabled)
-                    Toggle("Anı güncellemeleri", isOn: $memoryAlertsEnabled)
-                    Toggle("Plan hatırlatmaları", isOn: $planAlertsEnabled)
+                    Toggle("Paylaşım bildirimleri", isOn: $memoryAlertsEnabled)
+                    Toggle("Hatırlatma ve sürpriz bildirimleri", isOn: $planAlertsEnabled)
                     Toggle("Özel gün hatırlatmaları", isOn: $specialDayAlertsEnabled)
+                    
+                    if isSyncingPreferences {
+                        HStack(spacing: 12) {
+                            ProgressView()
+                            Text("Tercihler kaydediliyor...")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    
+                    if let preferenceSyncError {
+                        Text(preferenceSyncError)
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
                 }
                 .tint(themeManager.currentTheme.primaryColor)
                 
-                Section(footer: Text("Bu tercihler sadece uygulama içi davranış için saklanır. Push bildirim türlerine göre filtrelemek için arka uçla entegre etmeniz gerekir.")) {
+                Section(footer: Text("Bu tercihler hesabınla senkronlanır ve push gönderimi sunucu tarafında bu ayarlara göre filtrelenir.")) {
                     EmptyView()
                 }
             }
@@ -760,6 +781,7 @@ struct NotificationSettingsView: View {
             .tint(themeManager.currentTheme.primaryColor)
             .task {
                 await refreshAuthorizationStatus()
+                applyStoredPreferences(authService.currentUser?.notificationPreferences)
             }
             .onReceive(
                 NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification),
@@ -769,6 +791,21 @@ struct NotificationSettingsView: View {
                     }
                 }
             )
+            .onChange(of: authService.currentUser?.notificationPreferences) { _, preferences in
+                applyStoredPreferences(preferences)
+            }
+            .onChange(of: chatAlertsEnabled) { _, _ in
+                syncNotificationPreferences()
+            }
+            .onChange(of: memoryAlertsEnabled) { _, _ in
+                syncNotificationPreferences()
+            }
+            .onChange(of: planAlertsEnabled) { _, _ in
+                syncNotificationPreferences()
+            }
+            .onChange(of: specialDayAlertsEnabled) { _, _ in
+                syncNotificationPreferences()
+            }
         }
         .navigationViewStyle(StackNavigationViewStyle())
     }
@@ -815,6 +852,51 @@ struct NotificationSettingsView: View {
     private func refreshAuthorizationStatus() async {
         let settings = await UNUserNotificationCenter.current().notificationSettings()
         permissionStatus = settings.authorizationStatus
+    }
+    
+    private func applyStoredPreferences(_ preferences: NotificationPreferences?) {
+        guard let preferences else { return }
+        
+        suppressPreferenceSync = true
+        chatAlertsEnabled = preferences.chat
+        memoryAlertsEnabled = preferences.memory
+        planAlertsEnabled = preferences.plan
+        specialDayAlertsEnabled = preferences.specialDay
+        preferenceSyncError = nil
+        
+        DispatchQueue.main.async {
+            self.suppressPreferenceSync = false
+        }
+    }
+    
+    private func syncNotificationPreferences() {
+        guard !suppressPreferenceSync else { return }
+        
+        let preferences = NotificationPreferences(
+            chat: chatAlertsEnabled,
+            memory: memoryAlertsEnabled,
+            plan: planAlertsEnabled,
+            specialDay: specialDayAlertsEnabled
+        )
+        
+        Task {
+            await MainActor.run {
+                isSyncingPreferences = true
+                preferenceSyncError = nil
+            }
+            
+            do {
+                try await authService.updateNotificationPreferences(preferences)
+                await MainActor.run {
+                    isSyncingPreferences = false
+                }
+            } catch {
+                await MainActor.run {
+                    isSyncingPreferences = false
+                    preferenceSyncError = error.localizedDescription
+                }
+            }
+        }
     }
     
     private func openSystemSettings() {

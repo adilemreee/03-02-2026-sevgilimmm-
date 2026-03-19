@@ -13,6 +13,7 @@ struct MemoriesView: View {
     @State private var showingAddMemory = false
     @State private var selectedMemory: Memory?
     @State private var sortOption: MemorySortOption = .newest
+    @State private var searchText = ""
     
     enum MemorySortOption: String, CaseIterable {
         case newest = "En Yeni"
@@ -20,14 +21,34 @@ struct MemoriesView: View {
         case alphabetical = "A-Z"
     }
     
-    private var sortedMemories: [Memory] {
+    private var hasCustomControlSelection: Bool {
+        sortOption != .newest
+    }
+    
+    private var normalizedSearchText: String {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    
+    private var hasActiveFilters: Bool {
+        !normalizedSearchText.isEmpty
+    }
+    
+    private var visibleMemories: [Memory] {
+        sort(memories: filteredMemories)
+    }
+    
+    private var filteredMemories: [Memory] {
+        memoryService.memories.filter(matchesSearch)
+    }
+    
+    private func sort(memories: [Memory]) -> [Memory] {
         switch sortOption {
         case .newest:
-            return memoryService.memories.sorted { $0.date > $1.date }
+            return memories.sorted { $0.date > $1.date }
         case .oldest:
-            return memoryService.memories.sorted { $0.date < $1.date }
+            return memories.sorted { $0.date < $1.date }
         case .alphabetical:
-            return memoryService.memories.sorted {
+            return memories.sorted {
                 $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
             }
         }
@@ -45,86 +66,47 @@ struct MemoriesView: View {
             )
             .ignoresSafeArea()
             
-            VStack(spacing: 0) {
-                // Compact Header
-                HStack(spacing: 12) {
-                    Image(systemName: "heart.fill")
-                        .font(.system(size: 24))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [.pink, .red],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                    
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Anılarımız")
-                            .font(.title3)
-                            .fontWeight(.bold)
-                        
-                        Text("Birlikte yaşadığımız güzel anlar")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    Spacer()
-                }
-                .padding(.top, 10)
-                .padding(.horizontal, 20)
-                .padding(.bottom, 15)
-                
-                Picker("", selection: $sortOption) {
-                    ForEach(MemorySortOption.allCases, id: \.self) { option in
-                        Text(option.rawValue).tag(option)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal, 20)
-                .padding(.bottom, 15)
-                
-                // Content
+            Group {
                 if memoryService.memories.isEmpty {
-                    VStack(spacing: 20) {
-                        Image(systemName: "heart.text.square")
-                            .font(.system(size: 60))
-                            .foregroundColor(.secondary.opacity(0.6))
-                        
-                        VStack(spacing: 8) {
-                            Text("Henüz anı yok")
-                                .font(.headline)
-                                .foregroundColor(.primary)
-                            
-                            Text("Güzel anlarınızı kaydetmeye başlayın")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                                .multilineTextAlignment(.center)
-                        }
-                        
-                        Button(action: { showingAddMemory = true }) {
-                            Label("İlk Anıyı Ekle", systemImage: "plus.circle.fill")
-                                .font(.headline)
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 24)
-                                .padding(.vertical, 12)
-                                .background(themeManager.currentTheme.primaryColor)
-                                .cornerRadius(12)
-                        }
+                    VStack(spacing: 0) {
+                        headerSection
+                        controlsSection
+                        emptyState
                     }
-                    .frame(maxHeight: .infinity)
+                } else if visibleMemories.isEmpty {
+                    VStack(spacing: 0) {
+                        headerSection
+                        controlsSection
+                        filteredEmptyState
+                    }
                 } else {
                     ScrollView {
-                        LazyVStack(spacing: 16) {
-                            ForEach(sortedMemories, id: \.id) { memory in
-                                MemoryCardModern(memory: memory)
-                                    .contentShape(Rectangle())
-                                    .onTapGesture {
-                                        selectedMemory = memory
+                        VStack(spacing: 0) {
+                            headerSection
+                            controlsSection
+                            
+                            VStack(spacing: 16) {
+                                HStack {
+                                    Text(resultsSummaryText)
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundColor(.secondary)
+                                    Spacer()
+                                }
+                                .padding(.horizontal, 20)
+                                
+                                LazyVStack(spacing: 16) {
+                                    ForEach(visibleMemories, id: \.id) { memory in
+                                        MemoryCardModern(memory: memory)
+                                            .contentShape(Rectangle())
+                                            .onTapGesture {
+                                                selectedMemory = memory
+                                            }
                                     }
+                                }
+                                .padding(.horizontal, 20)
+                                .padding(.bottom, 20)
                             }
                         }
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 20)
                     }
                     .overlay(alignment: .top) {
                         if memoryService.isLoading {
@@ -166,6 +148,182 @@ struct MemoriesView: View {
             // Listener is handled by MainTabView
         }
     }
+    
+    private var resultsSummaryText: String {
+        if hasActiveFilters {
+            return "\(visibleMemories.count) sonuç gösteriliyor"
+        }
+        return "\(visibleMemories.count) anı kayıtlı"
+    }
+    
+    private var headerSection: some View {
+        SectionHeroHeader(
+            systemImage: "heart.fill",
+            iconColors: [.pink, .red],
+            title: "Anılarımız",
+            subtitle: hasActiveFilters ? "Aradığın anıyı daha hızlı bul" : "Birlikte yaşadığımız güzel anlar",
+            countValue: "\(memoryService.memories.count)",
+            countTint: .pink,
+            trailingContent: AnyView(filterMenuButton)
+        )
+    }
+    
+    private var controlsSection: some View {
+        searchField
+            .padding(.bottom, 8)
+    }
+    
+    private var filterMenuButton: some View {
+        Menu {
+            Section("Sırala") {
+                ForEach(MemorySortOption.allCases, id: \.self) { option in
+                    Button {
+                        sortOption = option
+                    } label: {
+                        if sortOption == option {
+                            Label(option.rawValue, systemImage: "checkmark")
+                        } else {
+                            Text(option.rawValue)
+                        }
+                    }
+                }
+            }
+            
+            if hasCustomControlSelection {
+                Section {
+                    Button {
+                        sortOption = .newest
+                    } label: {
+                        Label("Varsayılana Dön", systemImage: "arrow.counterclockwise")
+                    }
+                }
+            }
+        } label: {
+            SectionRoundIconButton(
+                systemImage: "slider.horizontal.3",
+                tint: themeManager.currentTheme.primaryColor,
+                emphasized: hasCustomControlSelection
+            )
+        }
+        .buttonStyle(.plain)
+    }
+    
+    private var searchField: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .foregroundColor(.secondary)
+                .font(.system(size: 18, weight: .medium))
+            
+            TextField("Başlık, açıklama, konum veya etiket ara", text: $searchText)
+                .textInputAutocapitalization(.never)
+                .disableAutocorrection(true)
+            
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(themeManager.currentTheme.primaryColor.opacity(0.08), lineWidth: 1)
+        )
+        .padding(.horizontal, 20)
+    }
+    
+    private var emptyState: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "heart.text.square")
+                .font(.system(size: 60))
+                .foregroundColor(.secondary.opacity(0.6))
+            
+            VStack(spacing: 8) {
+                Text("Henüz anı yok")
+                    .font(.headline)
+                    .foregroundColor(.primary)
+                
+                Text("Güzel anlarınızı kaydetmeye başlayın")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            
+            Button(action: { showingAddMemory = true }) {
+                Label("İlk Anıyı Ekle", systemImage: "plus.circle.fill")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 12)
+                    .background(themeManager.currentTheme.primaryColor)
+                    .cornerRadius(12)
+            }
+        }
+        .frame(maxHeight: .infinity)
+    }
+    
+    private var filteredEmptyState: some View {
+        VStack(spacing: 18) {
+            Image(systemName: "sparkle.magnifyingglass")
+                .font(.system(size: 56))
+                .foregroundColor(themeManager.currentTheme.primaryColor.opacity(0.8))
+            
+            VStack(spacing: 8) {
+                Text("Eşleşen anı bulunamadı")
+                    .font(.headline)
+                
+                Text("Aramayı değiştirip listedeki anıları tekrar filtreleyebilirsin.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            
+            Button {
+                clearFilters()
+            } label: {
+                Label("Aramayı Temizle", systemImage: "line.3.horizontal.decrease.circle.fill")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 22)
+                    .padding(.vertical, 12)
+                    .background(themeManager.currentTheme.primaryColor)
+                    .cornerRadius(12)
+            }
+        }
+        .padding(.horizontal, 28)
+        .frame(maxHeight: .infinity)
+    }
+    
+    private func clearFilters() {
+        searchText = ""
+    }
+    
+    private func matchesSearch(_ memory: Memory) -> Bool {
+        guard !normalizedSearchText.isEmpty else { return true }
+        
+        let query = normalizedSearchText.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+        let searchableTokens = [
+            memory.title,
+            memory.content,
+            memory.location,
+            DateFormatter.displayFormat.string(from: memory.date)
+        ].compactMap { $0 } + tags(for: memory)
+        
+        return searchableTokens.contains { token in
+            token.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+                .contains(query)
+        }
+    }
+    
+    private func tags(for memory: Memory) -> [String] {
+        memory.tags?.flatMap { [$0, "#\($0)"] } ?? []
+    }
 }
 
 
@@ -189,6 +347,10 @@ struct MemoryCardModern: View {
     
     private var commentCountText: String {
         memory.comments.count == 0 ? "Yorum yok" : "\(memory.comments.count)"
+    }
+
+    private var photoCount: Int {
+        memory.allPhotoURLs.count
     }
     
     private func toggleLike() {
@@ -253,6 +415,21 @@ struct MemoryCardModern: View {
                         .frame(height: 200)
                         .clipped()
                         .cornerRadius(12)
+                        .overlay(alignment: .topTrailing) {
+                            if photoCount > 1 {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "photo.on.rectangle.angled")
+                                        .font(.caption.weight(.semibold))
+                                    Text("\(photoCount) fotoğraf")
+                                        .font(.caption.weight(.semibold))
+                                }
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 8)
+                                .background(.ultraThinMaterial, in: Capsule())
+                                .padding(12)
+                            }
+                        }
                 } placeholder: {
                     ZStack {
                         Color.gray.opacity(0.1)

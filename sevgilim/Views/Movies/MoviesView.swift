@@ -13,6 +13,12 @@ struct MoviesView: View {
     @State private var showingAddMovie = false
     @State private var selectedMovie: Movie?
     
+    private var headerSubtitle: String {
+        movieService.movies.isEmpty ?
+        "Birlikte izlediğiniz filmler" :
+        "Birlikte izlediğiniz film arşivi"
+    }
+    
     var body: some View {
         ZStack {
             // Gradient Background
@@ -27,33 +33,14 @@ struct MoviesView: View {
             .ignoresSafeArea()
             
             VStack(spacing: 0) {
-                // Compact Header
-                HStack(spacing: 12) {
-                    Image(systemName: "tv.fill")
-                        .font(.system(size: 24))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [.purple, .pink],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                    
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("İzlenen Filmler")
-                            .font(.title3)
-                            .fontWeight(.bold)
-                        
-                        Text("Birlikte izlediğimiz filmler")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    Spacer()
-                }
-                .padding(.top, 10)
-                .padding(.horizontal, 20)
-                .padding(.bottom, 15)
+                SectionHeroHeader(
+                    systemImage: "tv.fill",
+                    iconColors: [.purple, .pink],
+                    title: "İzlenen Filmler",
+                    subtitle: headerSubtitle,
+                    countValue: "\(movieService.movies.count)",
+                    countTint: .purple
+                )
                 
                 // Content
                 if movieService.movies.isEmpty {
@@ -378,4 +365,3 @@ struct AddMovieView: View {
         }
     }
 }
-

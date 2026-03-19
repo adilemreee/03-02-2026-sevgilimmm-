@@ -20,6 +20,17 @@ struct PlacesView: View {
         case list, map
     }
     
+    private var headerSubtitle: String {
+        switch viewMode {
+        case .list:
+            return searchText.isEmpty ?
+                "Birlikte keşfettiğiniz yerler" :
+                "Aradığın yeri daha hızlı bul"
+        case .map:
+            return "Birlikte keşfettiğiniz noktalar"
+        }
+    }
+    
     var filteredPlaces: [Place] {
         if searchText.isEmpty {
             return placeService.places
@@ -47,41 +58,23 @@ struct PlacesView: View {
                 .ignoresSafeArea()
                 
                 VStack(spacing: 0) {
-                    // Header
-                    HStack(spacing: 12) {
-                        Image(systemName: "map.fill")
-                            .font(.system(size: 24))
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [.green, .blue],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Gittiğimiz Yerler")
-                                .font(.title3)
-                                .fontWeight(.bold)
-                            
-                            Text("Birlikte keşfettiğimiz yerler")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        
-                        Spacer()
-                        
-                        // View Mode Toggle
-                        Picker("Görünüm", selection: $viewMode) {
-                            Image(systemName: "list.bullet").tag(ViewMode.list)
-                            Image(systemName: "map").tag(ViewMode.map)
-                        }
-                        .pickerStyle(SegmentedPickerStyle())
-                        .frame(width: 100)
+                    SectionHeroHeader(
+                        systemImage: "map.fill",
+                        iconColors: [.green, .blue],
+                        title: "Gittiğimiz Yerler",
+                        subtitle: headerSubtitle,
+                        countValue: "\(filteredPlaces.count)",
+                        countTint: .green,
+                        countLabel: searchText.isEmpty ? "Yer" : "Sonuç"
+                    )
+                    
+                    Picker("Görünüm", selection: $viewMode) {
+                        Image(systemName: "list.bullet").tag(ViewMode.list)
+                        Image(systemName: "map").tag(ViewMode.map)
                     }
+                    .pickerStyle(SegmentedPickerStyle())
                     .padding(.horizontal, 20)
-                    .padding(.top, 10)
-                    .padding(.bottom, 15)
+                    .padding(.bottom, 12)
                     
                     // Search Bar
                     HStack {

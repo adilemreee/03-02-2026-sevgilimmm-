@@ -15,7 +15,6 @@ struct NotesView: View {
     
     var body: some View {
         ZStack {
-            // Gradient Background
             LinearGradient(
                 colors: [
                     themeManager.currentTheme.primaryColor.opacity(0.3),
@@ -26,81 +25,47 @@ struct NotesView: View {
             )
             .ignoresSafeArea()
             
-            VStack(spacing: 0) {
-                // Compact Header
-                HStack(spacing: 12) {
-                    Image(systemName: "note.text")
-                        .font(.system(size: 24))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [.orange, .yellow],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                    
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Notlarımız")
-                            .font(.title3)
-                            .fontWeight(.bold)
-                        
-                        Text("Paylaşımlı not defterimiz")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    Spacer()
-                }
-                .padding(.top, 10)
-                .padding(.horizontal, 20)
-                .padding(.bottom, 15)
-                
-                // Content
+            Group {
                 if noteService.notes.isEmpty {
-                    let _ = print("📝 Notes list is empty")
-                    VStack(spacing: 20) {
-                        Image(systemName: "doc.text")
-                            .font(.system(size: 60))
-                            .foregroundColor(.secondary.opacity(0.6))
-                        
-                        VStack(spacing: 8) {
-                            Text("Henüz not yok")
-                                .font(.headline)
-                                .foregroundColor(.primary)
-                            
-                            Text("Birlikte not tutmaya başlayın")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                                .multilineTextAlignment(.center)
-                        }
-                        
-                        Button(action: { showingAddNote = true }) {
-                            Label("İlk Notu Ekle", systemImage: "plus.circle.fill")
-                                .font(.headline)
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 24)
-                                .padding(.vertical, 12)
-                                .background(themeManager.currentTheme.primaryColor)
-                                .cornerRadius(12)
-                        }
+                    VStack(spacing: 0) {
+                        headerSection
+                        emptyState
                     }
-                    .frame(maxHeight: .infinity)
                 } else {
-                    let _ = print("📝 Displaying \(noteService.notes.count) notes")
                     ScrollView {
-                        LazyVStack(spacing: 12) {
-                            ForEach(noteService.notes) { note in
-                                NoteCardModern(note: note)
-                                    .onTapGesture {
-                                        print("📝 Note tapped: \(note.title)")
-                                        selectedNote = note
+                        VStack(spacing: 0) {
+                            headerSection
+                            
+                            VStack(spacing: 12) {
+                                HStack {
+                                    Text(resultsSummaryText)
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundColor(.secondary)
+                                    Spacer()
+                                }
+                                .padding(.horizontal, 20)
+                                
+                                LazyVStack(spacing: 12) {
+                                    ForEach(noteService.notes) { note in
+                                        NoteCardModern(note: note)
+                                            .onTapGesture {
+                                                print("📝 Note tapped: \(note.title)")
+                                                selectedNote = note
+                                            }
                                     }
+                                }
+                                .padding(.horizontal, 20)
+                                .padding(.bottom, 20)
                             }
                         }
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 20)
                     }
-                    .id(noteService.notes.count) // Force refresh when count changes
+                    .overlay(alignment: .top) {
+                        if noteService.isLoading {
+                            ProgressView()
+                                .padding()
+                                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        }
+                    }
                 }
             }
             
@@ -137,6 +102,51 @@ struct NotesView: View {
         .onDisappear {
             print("📝 NotesView disappeared - keeping listener active")
         }
+    }
+    
+    private var resultsSummaryText: String {
+        "\(noteService.notes.count) not kayıtlı"
+    }
+    
+    private var headerSection: some View {
+        SectionHeroHeader(
+            systemImage: "note.text",
+            iconColors: [.orange, .yellow],
+            title: "Notlarımız",
+            subtitle: "Paylaşımlı not defterimiz",
+            countValue: "\(noteService.notes.count)",
+            countTint: .orange
+        )
+    }
+    
+    private var emptyState: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "doc.text")
+                .font(.system(size: 60))
+                .foregroundColor(.secondary.opacity(0.6))
+            
+            VStack(spacing: 8) {
+                Text("Henüz not yok")
+                    .font(.headline)
+                    .foregroundColor(.primary)
+                
+                Text("Birlikte not tutmaya başlayın")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            
+            Button(action: { showingAddNote = true }) {
+                Label("İlk Notu Ekle", systemImage: "plus.circle.fill")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 12)
+                    .background(themeManager.currentTheme.primaryColor)
+                    .cornerRadius(12)
+            }
+        }
+        .frame(maxHeight: .infinity)
     }
 }
 
@@ -196,6 +206,7 @@ struct NoteDetailView: View {
     let note: Note
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var noteService: NoteService
+    @EnvironmentObject var authService: AuthenticationService
     @EnvironmentObject var themeManager: ThemeManager
     
     @State private var isEditing = false
@@ -316,7 +327,12 @@ struct NoteDetailView: View {
     
     private func saveChanges() {
         Task {
-            try? await noteService.updateNote(note, title: editedTitle, content: editedContent)
+            try? await noteService.updateNote(
+                note,
+                title: editedTitle,
+                content: editedContent,
+                userId: authService.currentUser?.id
+            )
             await MainActor.run {
                 isEditing = false
             }
@@ -528,4 +544,3 @@ struct AddNoteView: View {
         }
     }
 }
-

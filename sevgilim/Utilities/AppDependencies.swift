@@ -38,6 +38,7 @@ final class AppDependencies: ObservableObject {
     let secretVaultService = SecretVaultService()
     let moodService = MoodService()
     let proximityService = ProximityService()
+    let notificationHistoryService = NotificationHistoryService()
     
     private var cancellables = Set<AnyCancellable>()
     
@@ -89,6 +90,7 @@ final class AppDependencies: ObservableObject {
         storyService.listenToStories(relationshipId: relationshipId, currentUserId: userId)
         secretVaultService.listenToVault(relationshipId: relationshipId)
         moodService.listenToMoodStatuses(relationshipId: relationshipId)
+        notificationHistoryService.listenToNotifications(userId: userId)
         
         // Proximity Service - Start if enabled (Wait for relationship data)
         relationshipService.$currentRelationship
@@ -133,6 +135,7 @@ final class AppDependencies: ObservableObject {
         secretVaultService.stopListening()
         moodService.stopListening()
         proximityService.stopTracking()
+        notificationHistoryService.stopListening()
         
         print("🛑 All services stopped")
     }

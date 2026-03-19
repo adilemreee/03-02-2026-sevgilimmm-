@@ -29,6 +29,8 @@ extension View {
             .onChange(of: router.pendingNavigation) { _, target in
                 guard let target = target else { return }
                 switch target {
+                case .home:
+                    if let tab = selectedTab { tab.wrappedValue = 0 }
                 case .chat:
                     if let tab = selectedTab { tab.wrappedValue = 0 }
                     navigateToChat?.wrappedValue = true
@@ -85,6 +87,7 @@ extension View {
         self.onAppear {
             guard let target = router.pendingNavigation else { return }
             switch target {
+            case .home:        break
             case .chat:        navigateToChat?.wrappedValue = true
             case .surprises:   navigateToSurprises?.wrappedValue = true
             case .specialDays: navigateToSpecialDays?.wrappedValue = true

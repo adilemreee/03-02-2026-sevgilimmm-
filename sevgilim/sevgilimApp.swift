@@ -42,6 +42,7 @@ struct sevgilimApp: App {
                 .environmentObject(dependencies.greetingService)
                 .environmentObject(dependencies.secretVaultService)
                 .environmentObject(dependencies.proximityService)
+                .environmentObject(dependencies.notificationHistoryService)
                 .onAppear {
                     appDelegate.navigationRouter = dependencies.navigationRouter
                 }
@@ -95,9 +96,6 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         // Kullanıcıdan bildirim izni iste
         requestNotificationPermissions()
         
-        // Uygulamanın önceden kalan rozeti varsa sıfırla
-        resetBadge()
-        
         // Firebase’e ait token senkronizasyonu yapılacaksa
         PushNotificationManager.shared.refreshIfNeeded()
         
@@ -123,15 +121,13 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         print("❌ APNs kayıt hatası: \(error.localizedDescription)")
     }
     
-    /// Uygulama aktif olduğunda rozet sıfırlanır ve token senkronizasyonu yapılır.
+    /// Uygulama aktif olduğunda token senkronizasyonu yapılır.
     func applicationDidBecomeActive(_ application: UIApplication) {
-        resetBadge()
         PushNotificationManager.shared.syncTokenWithCurrentUser()
     }
     
-    /// Arka plandan dönüldüğünde rozetler ve bildirimler temizlenir.
+    /// Arka plandan dönüldüğünde ek işlem gerekmiyor.
     func applicationWillEnterForeground(_ application: UIApplication) {
-        resetBadge()
     }
     
     /// FCM token güncellendiğinde sunucuya iletilir.
@@ -252,32 +248,10 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     
     private func routeNotificationIfNeeded(userInfo: [AnyHashable: Any]) {
         guard let type = notificationType(from: userInfo)?.lowercased() else { return }
-        switch type {
-        case "message_new":
-            enqueueNavigation { $0.openChat() }
-        case "surprise_new":
-            enqueueNavigation { $0.openSurprises() }
-        case "special_day_upcoming":
-            enqueueNavigation { $0.openSpecialDays() }
-        case "plan_reminder":
-            enqueueNavigation { $0.openPlans() }
-        case "movie_night":
-            enqueueNavigation { $0.openMovies() }
-        case "note_shared":
-            enqueueNavigation { $0.openNotes() }
-        case "photo_added":
-            enqueueNavigation { $0.openPhotos() }
-        case "song_shared":
-            enqueueNavigation { $0.openSongs() }
-        case "place_recommendation":
-            enqueueNavigation { $0.openPlaces() }
-        case "secret_vault_alert":
-            enqueueNavigation { $0.openSecretVault() }
-        case "memory_new":
-            enqueueNavigation { $0.openMemories() }
-        default:
-            break
+        guard AppNavigationRouter.target(forNotificationType: type) != nil else {
+            return
         }
+        enqueueNavigation { $0.open(notificationType: type) }
     }
     
     private func enqueueNavigation(_ action: @escaping (AppNavigationRouter) -> Void) {

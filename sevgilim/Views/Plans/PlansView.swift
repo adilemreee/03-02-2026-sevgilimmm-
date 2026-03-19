@@ -22,6 +22,16 @@ struct PlansView: View {
         planService.plans.filter { $0.isCompleted }
     }
     
+    private var headerSubtitle: String {
+        selectedSegment == 0 ?
+        "Birlikte yapacağınız planlar" :
+        "Tamamlanan güzel planlar"
+    }
+    
+    private var headerCountValue: String {
+        "\(selectedSegment == 0 ? activePlans.count : completedPlans.count)"
+    }
+    
     var body: some View {
         ZStack {
             // Gradient Background
@@ -36,33 +46,14 @@ struct PlansView: View {
             .ignoresSafeArea()
             
             VStack(spacing: 0) {
-                // Compact Header
-                HStack(spacing: 12) {
-                    Image(systemName: "list.star")
-                        .font(.system(size: 24))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [.indigo, .blue],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                    
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Planlarımız")
-                            .font(.title3)
-                            .fontWeight(.bold)
-                        
-                        Text("Birlikte yapacağımız planlar")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    Spacer()
-                }
-                .padding(.top, 10)
-                .padding(.horizontal, 20)
-                .padding(.bottom, 12)
+                SectionHeroHeader(
+                    systemImage: "list.star",
+                    iconColors: [.indigo, .blue],
+                    title: "Planlarımız",
+                    subtitle: headerSubtitle,
+                    countValue: headerCountValue,
+                    countTint: .indigo
+                )
                 
                 // Segmented Picker
                 Picker("", selection: $selectedSegment) {
@@ -189,6 +180,7 @@ struct PlansView: View {
 struct PlanCardModern: View {
     let plan: Plan
     @EnvironmentObject var planService: PlanService
+    @EnvironmentObject var authService: AuthenticationService
     @EnvironmentObject var themeManager: ThemeManager
     
     var body: some View {
@@ -247,7 +239,10 @@ struct PlanCardModern: View {
     
     private func toggleCompletion() {
         Task {
-            try? await planService.toggleCompletion(plan)
+            try? await planService.toggleCompletion(
+                plan,
+                userId: authService.currentUser?.id
+            )
         }
     }
 }
@@ -345,6 +340,7 @@ struct PlanDetailView: View {
     let plan: Plan
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var planService: PlanService
+    @EnvironmentObject var authService: AuthenticationService
     
     @State private var isEditing = false
     @State private var editedTitle: String
@@ -533,7 +529,10 @@ struct PlanDetailView: View {
                             // Toggle completion
                             Button(action: {
                                 Task {
-                                    try? await planService.toggleCompletion(plan)
+                                    try? await planService.toggleCompletion(
+                                        plan,
+                                        userId: authService.currentUser?.id
+                                    )
                                 }
                             }) {
                                 Image(systemName: plan.isCompleted ? "arrow.uturn.backward.circle" : "checkmark.circle.fill")
@@ -588,7 +587,8 @@ struct PlanDetailView: View {
                     title: editedTitle,
                     description: editedDescription.isEmpty ? nil : editedDescription,
                     date: editedDate,
-                    reminderEnabled: editedReminderEnabled
+                    reminderEnabled: editedReminderEnabled,
+                    userId: authService.currentUser?.id
                 )
                 await MainActor.run {
                     isEditing = false
@@ -599,4 +599,3 @@ struct PlanDetailView: View {
         }
     }
 }
-
