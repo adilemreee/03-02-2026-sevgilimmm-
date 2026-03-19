@@ -910,61 +910,35 @@ struct CachedAvatarView: View {
     let photoURL: String?
     let size: CGFloat
     
-    @State private var cachedImage: UIImage?
-    @State private var isLoading = true
-    
     var body: some View {
-        Group {
-            if let image = cachedImage {
-                Image(uiImage: image)
+        if let photoURL, !photoURL.isEmpty {
+            CachedAsyncImage(url: photoURL, thumbnail: true) { image, _ in
+                image
                     .resizable()
                     .scaledToFill()
                     .frame(width: size, height: size)
                     .clipShape(Circle())
-            } else {
-                Circle()
-                    .fill(LinearGradient(
-                        colors: [.pink, .purple],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ))
-                    .frame(width: size, height: size)
-                    .overlay {
-                        if isLoading {
-                            ProgressView()
-                                .tint(.white)
-                        } else {
-                            Image(systemName: "person.fill")
-                                .foregroundColor(.white)
-                                .font(.system(size: size * 0.5))
-                        }
-                    }
+            } placeholder: {
+                placeholder
             }
-        }
-        .onAppear {
-            loadImage()
+        } else {
+            placeholder
         }
     }
     
-    private func loadImage() {
-        guard let photoURL = photoURL else {
-            isLoading = false
-            return
-        }
-        
-        Task {
-            do {
-                let image = try await ImageCacheService.shared.loadImage(from: photoURL, thumbnail: true)
-                await MainActor.run {
-                    cachedImage = image
-                    isLoading = false
-                }
-            } catch {
-                await MainActor.run {
-                    isLoading = false
-                }
+    private var placeholder: some View {
+        Circle()
+            .fill(LinearGradient(
+                colors: [.pink, .purple],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ))
+            .frame(width: size, height: size)
+            .overlay {
+                Image(systemName: "person.fill")
+                    .foregroundColor(.white)
+                    .font(.system(size: size * 0.5))
             }
-        }
     }
 }
 
