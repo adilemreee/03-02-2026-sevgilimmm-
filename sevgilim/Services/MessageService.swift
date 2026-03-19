@@ -16,7 +16,6 @@ class MessageService: ObservableObject {
     @Published var unreadMessageCount: Int = 0
     
     private let messagesLimit = 100
-    private let offlineCache = OfflineDataManager.shared
     
     enum MessageDeletionScope {
         case me
@@ -34,12 +33,6 @@ class MessageService: ObservableObject {
     func listenToMessages(relationshipId: String , currentUserId : String) {
         // Remove existing listener if any
         messagesListener?.remove()
-        
-        // 🔥 Offline-first: Önce önbellekten yükle
-        if let cachedMessages = offlineCache.loadMessages(), !cachedMessages.isEmpty {
-            self.messages = cachedMessages
-            print("⚡ MessageService: \(cachedMessages.count) mesaj önbellekten yüklendi")
-        }
 
         let baseQuery = db.collection("messages")
             .whereField("relationshipId", isEqualTo: relationshipId)
@@ -381,9 +374,6 @@ class MessageService: ObservableObject {
             }
 
             self.messages = fetchedMessages
-            
-            // 💾 Önbelleğe kaydet
-            self.offlineCache.saveMessages(fetchedMessages)
         }
     }
 }

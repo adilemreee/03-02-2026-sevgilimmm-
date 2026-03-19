@@ -19,23 +19,11 @@ class StoryService: ObservableObject {
     private let db = Firestore.firestore()
     private let storage = Storage.storage()
     private var listener: ListenerRegistration?
-    private let offlineCache = OfflineDataManager.shared
     
     // Story'leri dinle (real-time)
     func listenToStories(relationshipId: String, currentUserId: String) {
         listener?.remove()
         listener = nil
-        
-        // 🔥 Offline-first: Önce önbellekten yükle
-        if let cachedStories = offlineCache.loadStories(), !cachedStories.isEmpty {
-            let activeStories = cachedStories.filter { !$0.isExpired }
-            self.stories = activeStories
-            self.userStories = activeStories.filter { $0.createdBy == currentUserId }
-                .sorted { $0.createdAt < $1.createdAt }
-            self.partnerStories = activeStories.filter { $0.createdBy != currentUserId }
-                .sorted { $0.createdAt < $1.createdAt }
-            print("⚡ StoryService: \(activeStories.count) story önbellekten yüklendi")
-        }
         
         listener = db.collection("stories")
             .whereField("relationshipId", isEqualTo: relationshipId)
@@ -71,9 +59,6 @@ class StoryService: ObservableObject {
                         }
                     }
                 }
-                
-                // 💾 Önbelleğe kaydet
-                self.offlineCache.saveStories(activeStories)
                 
                 Task { @MainActor in
                     self.stories = activeStories

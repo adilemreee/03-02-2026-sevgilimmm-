@@ -13,17 +13,10 @@ class SpecialDayService: ObservableObject {
     
     private let db = Firestore.firestore()
     private var listener: ListenerRegistration?
-    private let offlineCache = OfflineDataManager.shared
     
     func listenToSpecialDays(relationshipId: String) {
         print("🔵 Starting listener for relationshipId: \(relationshipId)")
         listener?.remove()
-        
-        // 🔥 Offline-first: Önce önbellekten yükle
-        if let cachedDays = offlineCache.loadSpecialDays(), !cachedDays.isEmpty {
-            self.specialDays = cachedDays
-            print("⚡ SpecialDayService: \(cachedDays.count) özel gün önbellekten yüklendi")
-        }
         
         listener = db.collection("specialDays")
             .whereField("relationshipId", isEqualTo: relationshipId)
@@ -65,9 +58,6 @@ class SpecialDayService: ObservableObject {
                 Task { @MainActor in
                     self.specialDays = sortedDays
                     print("✅ Updated specialDays array with \(self.specialDays.count) items")
-                    
-                    // 💾 Önbelleğe kaydet
-                    self.offlineCache.saveSpecialDays(sortedDays)
                 }
             }
     }

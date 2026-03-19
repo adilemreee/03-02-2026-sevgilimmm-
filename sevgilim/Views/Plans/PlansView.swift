@@ -168,11 +168,6 @@ struct PlansView: View {
             PlanDetailView(plan: plan)
                 .environmentObject(planService)
         }
-        .onAppear {
-            if let relationshipId = authService.currentUser?.relationshipId {
-                planService.listenToPlans(relationshipId: relationshipId)
-            }
-        }
     }
 }
 

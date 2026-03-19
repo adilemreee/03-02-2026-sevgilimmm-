@@ -520,6 +520,7 @@ const formatDateTime = (value) => {
 
   try {
     const formatter = new Intl.DateTimeFormat("tr-TR", {
+      timeZone: "Europe/Istanbul",
       day: "numeric",
       month: "short",
       hour: "2-digit",
@@ -540,6 +541,7 @@ const formatDateOnly = (value) => {
 
   try {
     const formatter = new Intl.DateTimeFormat("tr-TR", {
+      timeZone: "Europe/Istanbul",
       day: "numeric",
       month: "long",
     });

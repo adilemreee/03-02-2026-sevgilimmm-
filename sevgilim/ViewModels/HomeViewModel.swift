@@ -124,18 +124,6 @@ final class HomeViewModel: ObservableObject {
         try await surpriseService.markAsOpened(surprise)
     }
     
-    func startListeners() {
-        guard let relationshipId = authService.currentUser?.relationshipId,
-              let userId = authService.currentUser?.id else {
-            return
-        }
-        
-        relationshipService.listenToRelationship(relationshipId: relationshipId)
-        specialDayService.listenToSpecialDays(relationshipId: relationshipId)
-        messageServiceRef.listenToUnreadMessagesCount(relationshipId: relationshipId, currentUserId: userId)
-        moodService.listenToMoodStatuses(relationshipId: relationshipId)
-    }
-    
     private func observeServices() {
         // Merge all service change publishers and throttle to prevent cascade redraws
         // Without throttle, ANY change in ANY of the 10 services triggers a full HomeView redraw

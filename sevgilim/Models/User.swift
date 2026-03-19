@@ -4,7 +4,6 @@
 //
 
 import Foundation
-import FirebaseFirestore
 
 struct NotificationPreferences: Codable, Equatable {
     var chat: Bool
@@ -44,7 +43,7 @@ struct NotificationPreferences: Codable, Equatable {
 }
 
 struct User: Identifiable, Codable {
-    @DocumentID var id: String?
+    var id: String?
     var email: String
     var name: String
     var profileImageURL: String?

@@ -113,11 +113,6 @@ struct MoviesView: View {
         .sheet(item: $selectedMovie) { movie in
             MovieDetailView(movie: movie)
         }
-        .onAppear {
-            if let relationshipId = authService.currentUser?.relationshipId {
-                movieService.listenToMovies(relationshipId: relationshipId)
-            }
-        }
     }
 }
 

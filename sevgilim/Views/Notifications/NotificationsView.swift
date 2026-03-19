@@ -98,11 +98,6 @@ struct NotificationsView: View {
                 .padding(.bottom, 24)
             }
         }
-        .task {
-            if let userId = authService.currentUser?.id {
-                notificationHistoryService.listenToNotifications(userId: userId)
-            }
-        }
     }
     
     private func handleNotificationTap(_ notification: AppNotification) async {

@@ -184,11 +184,6 @@ struct SpecialDaysView: View {
                 .environmentObject(specialDayService)
                 .environmentObject(themeManager)
         }
-        .onAppear {
-            if let relationshipId = authService.currentUser?.relationshipId {
-                specialDayService.listenToSpecialDays(relationshipId: relationshipId)
-            }
-        }
     }
 }
 

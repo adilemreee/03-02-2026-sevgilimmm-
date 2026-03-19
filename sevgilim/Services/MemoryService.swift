@@ -15,19 +15,11 @@ class MemoryService: ObservableObject {
     private let db = Firestore.firestore()
     private var listener: ListenerRegistration?
     private let memoriesLimit = 30 // Load first 30 memories for performance
-    private let offlineCache = OfflineDataManager.shared
     
     func listenToMemories(relationshipId: String) {
         listener?.remove()
         listener = nil
         isLoading = true
-        
-        // 🔥 Offline-first: Önce önbellekten yükle
-        if let cachedMemories = offlineCache.loadMemories(), !cachedMemories.isEmpty {
-            self.memories = cachedMemories
-            self.isLoading = false
-            print("⚡ MemoryService: \(cachedMemories.count) anı önbellekten yüklendi")
-        }
         
         isLoading = memories.isEmpty // Sadece önbellek boşsa loading göster
         
@@ -66,10 +58,7 @@ class MemoryService: ObservableObject {
                 Task { @MainActor in
                     self.memories = newMemories
                     self.isLoading = false
-                    
-                    // 💾 Önbelleğe kaydet
-                    self.offlineCache.saveMemories(newMemories)
-                    
+
                     // Anı fotoğraflarını önbelleğe al
                     let photoURLs = newMemories.flatMap { $0.allPhotoURLs }
                     if !photoURLs.isEmpty {

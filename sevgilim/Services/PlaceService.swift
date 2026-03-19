@@ -15,18 +15,10 @@ class PlaceService: ObservableObject {
     private let db = Firestore.firestore()
     private var listener: ListenerRegistration?
     private let placesLimit = 50 // Load first 50 places for performance
-    private let offlineCache = OfflineDataManager.shared
     
     func listenToPlaces(relationshipId: String) {
         listener?.remove()
         isLoading = true
-        
-        // 🔥 Offline-first: Önce önbellekten yükle
-        if let cachedPlaces = offlineCache.loadPlaces(), !cachedPlaces.isEmpty {
-            self.places = cachedPlaces
-            self.isLoading = false
-            print("⚡ PlaceService: \(cachedPlaces.count) mekan önbellekten yüklendi")
-        }
         
         // Optimized query: limit results for faster loading
         listener = db.collection("places")
@@ -59,9 +51,6 @@ class PlaceService: ObservableObject {
                 Task { @MainActor in
                     self.places = newPlaces
                     self.isLoading = false
-                    
-                    // 💾 Önbelleğe kaydet
-                    self.offlineCache.savePlaces(newPlaces)
                 }
             }
     }

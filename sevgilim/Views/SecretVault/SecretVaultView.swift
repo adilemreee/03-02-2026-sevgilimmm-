@@ -190,8 +190,6 @@ struct SecretVaultContentView: View {
             Text(deletionError ?? "")
         }
         .onAppear {
-            guard let relationshipId = authService.currentUser?.relationshipId else { return }
-            secretVaultService.listenToVault(relationshipId: relationshipId)
             viewerItems = filteredItems
         }
         .onChange(of: filter) { _, _ in
@@ -1572,10 +1570,6 @@ struct AddSecretMediaView: View {
                         duration: result.duration,
                         contentType: result.contentType
                     )
-                }
-                
-                await MainActor.run {
-                    secretVaultService.listenToVault(relationshipId: relationshipId)
                 }
                 
                 await MainActor.run {

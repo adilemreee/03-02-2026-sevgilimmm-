@@ -247,8 +247,6 @@ struct HomeView: View {
                 currentDate = Date()
             }
             .task {
-                viewModel.startListeners()
-                
                 // Sync data to widget on initial load
                 syncWidgetData()
             }
@@ -282,4 +280,3 @@ struct HomeView: View {
         }
     }
 }
-

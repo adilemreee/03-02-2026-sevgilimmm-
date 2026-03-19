@@ -14,18 +14,10 @@ class MovieService: ObservableObject {
     
     private let db = Firestore.firestore()
     private var listener: ListenerRegistration?
-    private let offlineCache = OfflineDataManager.shared
     
     func listenToMovies(relationshipId: String) {
         listener?.remove()
         isLoading = true
-        
-        // 🔥 Offline-first: Önce önbellekten yükle
-        if let cachedMovies = offlineCache.loadMovies(), !cachedMovies.isEmpty {
-            self.movies = cachedMovies
-            self.isLoading = false
-            print("⚡ MovieService: \(cachedMovies.count) film önbellekten yüklendi")
-        }
         
         // Optimized query with limit
         listener = db.collection("movies")
@@ -57,9 +49,6 @@ class MovieService: ObservableObject {
                 Task { @MainActor in
                     self.movies = newMovies
                     self.isLoading = false
-                    
-                    // 💾 Önbelleğe kaydet
-                    self.offlineCache.saveMovies(newMovies)
                 }
             }
     }
