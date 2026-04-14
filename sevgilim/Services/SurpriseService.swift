@@ -16,11 +16,19 @@ class SurpriseService: ObservableObject {
     private let db = Firestore.firestore()
     private let storage = Storage.storage()
     private var listener: ListenerRegistration?
+    private let offlineCache = OfflineDataManager.shared
     
     func listenToSurprises(relationshipId: String, userId: String) {
         listener?.remove()
         listener = nil
         isLoading = true
+        
+        // 🔥 Offline-first: Önce önbellekten yükle
+        if let cachedSurprises = offlineCache.loadSurprises(), !cachedSurprises.isEmpty {
+            self.surprises = cachedSurprises
+            self.isLoading = false
+            print("⚡ SurpriseService: \(cachedSurprises.count) sürpriz önbellekten yüklendi")
+        }
         
         listener = db.collection("surprises")
             .whereField("relationshipId", isEqualTo: relationshipId)
@@ -44,11 +52,14 @@ class SurpriseService: ObservableObject {
                 }
                 
                 let newSurprises = documents.compactMap { doc -> Surprise? in
-                    try? doc.data(as: Surprise.self)
+                    try? FirestoreDocumentDecoder.decode(Surprise.self, from: doc)
                 }
                 
                 // Tarihe göre sırala: En yakın açılacak önce
                 let sorted = newSurprises.sorted { $0.revealDate < $1.revealDate }
+                
+                // 💾 Önbelleğe kaydet
+                self.offlineCache.saveSurprises(sorted)
                 
                 Task { @MainActor in
                     self.surprises = sorted

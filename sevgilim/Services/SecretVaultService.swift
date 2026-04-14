@@ -17,6 +17,7 @@ final class SecretVaultService: ObservableObject {
     private let db = Firestore.firestore()
     private let storage = Storage.storage()
     private var listener: ListenerRegistration?
+    private let offlineCache = OfflineDataManager.shared
     
     private var collection: CollectionReference {
         db.collection("secretVault")
@@ -27,6 +28,13 @@ final class SecretVaultService: ObservableObject {
         listener = nil
         isLoading = true
         errorMessage = nil
+        
+        // 🔥 Offline-first: Önce önbellekten yükle
+        if let cachedItems = offlineCache.loadSecretVault(), !cachedItems.isEmpty {
+            self.items = cachedItems
+            self.isLoading = false
+            print("⚡ SecretVaultService: \(cachedItems.count) öğe önbellekten yüklendi")
+        }
         
         listener = collection
             .whereField("relationshipId", isEqualTo: relationshipId)
@@ -52,12 +60,15 @@ final class SecretVaultService: ObservableObject {
                 
                 let fetched: [SecretVaultItem] = documents.compactMap { doc in
                     do {
-                        return try doc.data(as: SecretVaultItem.self)
+                        return try FirestoreDocumentDecoder.decode(SecretVaultItem.self, from: doc)
                     } catch {
                         print("❌ SecretVault decode error: \(error.localizedDescription)")
                         return nil
                     }
                 }
+                
+                // 💾 Önbelleğe kaydet
+                self.offlineCache.saveSecretVault(fetched)
                 
                 Task { @MainActor in
                     self.items = fetched

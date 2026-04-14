@@ -59,7 +59,7 @@ final class NotificationHistoryService: ObservableObject {
                 }
                 
                 let items = snapshot?.documents.compactMap { document in
-                    try? document.data(as: AppNotification.self)
+                    try? FirestoreDocumentDecoder.decode(AppNotification.self, from: document)
                 } ?? []
                 
                 Task { @MainActor in

@@ -7,7 +7,7 @@ import Foundation
 import FirebaseFirestore
 
 struct AppNotification: Identifiable, Codable {
-    @DocumentID var id: String?
+    var id: String? = nil
     var userId: String
     var relationshipId: String?
     var type: String

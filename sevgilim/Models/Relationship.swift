@@ -4,10 +4,9 @@
 //
 
 import Foundation
-import FirebaseFirestore
 
 struct Relationship: Identifiable, Codable {
-    @DocumentID var id: String?
+    var id: String? = nil
     var user1Id: String
     var user2Id: String
     var user1Name: String

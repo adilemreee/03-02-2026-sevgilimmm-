@@ -13,20 +13,27 @@ class MemoryService: ObservableObject {
     @Published var isLoading = false
     
     private let db = Firestore.firestore()
+    private let decoder = Firestore.Decoder()
     private var listener: ListenerRegistration?
-    private let memoriesLimit = 30 // Load first 30 memories for performance
+    private let offlineCache = OfflineDataManager.shared
     
     func listenToMemories(relationshipId: String) {
         listener?.remove()
         listener = nil
         isLoading = true
         
+        // 🔥 Offline-first: Önce önbellekten yükle
+        if let cachedMemories = offlineCache.loadMemories(), !cachedMemories.isEmpty {
+            self.memories = cachedMemories
+            self.isLoading = false
+            print("⚡ MemoryService: \(cachedMemories.count) anı önbellekten yüklendi")
+        }
+        
         isLoading = memories.isEmpty // Sadece önbellek boşsa loading göster
         
         listener = db.collection("memories")
             .whereField("relationshipId", isEqualTo: relationshipId)
             .order(by: "date", descending: true)
-            .limit(to: memoriesLimit)
             .addSnapshotListener { [weak self] snapshot, error in
                 guard let self = self else { return }
                 
@@ -48,7 +55,9 @@ class MemoryService: ObservableObject {
                 // Process documents efficiently
                 let newMemories = documents.compactMap { doc -> Memory? in
                     do {
-                        return try doc.data(as: Memory.self)
+                        var data = doc.data()
+                        data["id"] = doc.documentID
+                        return try self.decoder.decode(Memory.self, from: data)
                     } catch {
                         print("❌ Memory decode error for doc \(doc.documentID): \(error)")
                         return nil
@@ -58,7 +67,10 @@ class MemoryService: ObservableObject {
                 Task { @MainActor in
                     self.memories = newMemories
                     self.isLoading = false
-
+                    
+                    // 💾 Önbelleğe kaydet
+                    self.offlineCache.saveMemories(newMemories)
+                    
                     // Anı fotoğraflarını önbelleğe al
                     let photoURLs = newMemories.flatMap { $0.allPhotoURLs }
                     if !photoURLs.isEmpty {

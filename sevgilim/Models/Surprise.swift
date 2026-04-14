@@ -7,7 +7,7 @@ import Foundation
 import FirebaseFirestore
 
 struct Surprise: Identifiable, Codable {
-    @DocumentID var id: String?
+    var id: String? = nil
     var relationshipId: String
     var title: String
     var message: String
@@ -65,7 +65,7 @@ struct Surprise: Identifiable, Codable {
     
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        _id = try container.decode(DocumentID<String>.self, forKey: .id)
+        id = try container.decodeIfPresent(String.self, forKey: .id)
         relationshipId = try container.decode(String.self, forKey: .relationshipId)
         title = try container.decode(String.self, forKey: .title)
         message = try container.decode(String.self, forKey: .message)

@@ -7,7 +7,7 @@ import Foundation
 import FirebaseFirestore
 
 struct Movie: Identifiable, Codable {
-    @DocumentID var id: String?
+    var id: String? = nil
     var relationshipId: String
     var title: String
     var watchedDate: Date
@@ -29,4 +29,3 @@ struct Movie: Identifiable, Codable {
         case createdAt
     }
 }
-

@@ -14,10 +14,18 @@ class PlanService: ObservableObject {
     
     private let db = Firestore.firestore()
     private var listener: ListenerRegistration?
+    private let offlineCache = OfflineDataManager.shared
     
     func listenToPlans(relationshipId: String) {
         listener?.remove()
         isLoading = true
+        
+        // 🔥 Offline-first: Önce önbellekten yükle
+        if let cachedPlans = offlineCache.loadPlans(), !cachedPlans.isEmpty {
+            self.plans = cachedPlans
+            self.isLoading = false
+            print("⚡ PlanService: \(cachedPlans.count) plan önbellekten yüklendi")
+        }
         
         // Optimized query with limit
         listener = db.collection("plans")
@@ -43,12 +51,15 @@ class PlanService: ObservableObject {
                 }
                 
                 let newPlans = documents.compactMap { doc -> Plan? in
-                    try? doc.data(as: Plan.self)
+                    try? FirestoreDocumentDecoder.decode(Plan.self, from: doc)
                 }
                 
                 Task { @MainActor in
                     self.plans = newPlans
                     self.isLoading = false
+                    
+                    // 💾 Önbelleğe kaydet
+                    self.offlineCache.savePlans(newPlans)
                 }
             }
     }

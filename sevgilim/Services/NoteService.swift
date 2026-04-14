@@ -14,11 +14,19 @@ class NoteService: ObservableObject {
     
     private let db = Firestore.firestore()
     private var listener: ListenerRegistration?
+    private let offlineCache = OfflineDataManager.shared
     
     func listenToNotes(relationshipId: String) {
         listener?.remove()
         listener = nil
         isLoading = true
+        
+        // 🔥 Offline-first: Önce önbellekten yükle
+        if let cachedNotes = offlineCache.loadNotes(), !cachedNotes.isEmpty {
+            self.notes = cachedNotes
+            self.isLoading = false
+            print("⚡ NoteService: \(cachedNotes.count) not önbellekten yüklendi")
+        }
         
         isLoading = notes.isEmpty
         
@@ -45,12 +53,15 @@ class NoteService: ObservableObject {
                 }
                 
                 let newNotes = documents.compactMap { doc -> Note? in
-                    try? doc.data(as: Note.self)
+                    try? FirestoreDocumentDecoder.decode(Note.self, from: doc)
                 }
                 
                 Task { @MainActor in
                     self.notes = newNotes
                     self.isLoading = false
+                    
+                    // 💾 Önbelleğe kaydet
+                    self.offlineCache.saveNotes(newNotes)
                 }
             }
     }

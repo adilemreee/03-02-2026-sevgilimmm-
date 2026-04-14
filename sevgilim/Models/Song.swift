@@ -7,7 +7,7 @@ import Foundation
 import FirebaseFirestore
 
 struct Song: Identifiable, Codable {
-    @DocumentID var id: String?
+    var id: String? = nil
     var relationshipId: String
     var title: String
     var artist: String

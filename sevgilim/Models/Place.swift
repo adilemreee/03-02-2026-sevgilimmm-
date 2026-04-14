@@ -7,7 +7,7 @@ import Foundation
 import FirebaseFirestore
 
 struct Place: Identifiable, Codable {
-    @DocumentID var id: String?
+    var id: String? = nil
     var relationshipId: String
     var name: String
     var address: String?

@@ -15,10 +15,18 @@ class SongService: ObservableObject {
     private let db = Firestore.firestore()
     private var listener: ListenerRegistration?
     private let songsLimit = 50 // Load first 50 songs for performance
+    private let offlineCache = OfflineDataManager.shared
     
     func listenToSongs(relationshipId: String) {
         listener?.remove()
         isLoading = true
+        
+        // 🔥 Offline-first: Önce önbellekten yükle
+        if let cachedSongs = offlineCache.loadSongs(), !cachedSongs.isEmpty {
+            self.songs = cachedSongs
+            self.isLoading = false
+            print("⚡ SongService: \(cachedSongs.count) şarkı önbellekten yüklendi")
+        }
         
         // Optimized query: limit results for faster loading
         listener = db.collection("songs")
@@ -45,12 +53,15 @@ class SongService: ObservableObject {
                 
                 // Process only changed documents for better performance
                 let newSongs = documents.compactMap { doc -> Song? in
-                    try? doc.data(as: Song.self)
+                    try? FirestoreDocumentDecoder.decode(Song.self, from: doc)
                 }
                 
                 Task { @MainActor in
                     self.songs = newSongs
                     self.isLoading = false
+                    
+                    // 💾 Önbelleğe kaydet
+                    self.offlineCache.saveSongs(newSongs)
                 }
             }
     }

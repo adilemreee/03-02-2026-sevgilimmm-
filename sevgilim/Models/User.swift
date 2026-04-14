@@ -43,7 +43,7 @@ struct NotificationPreferences: Codable, Equatable {
 }
 
 struct User: Identifiable, Codable {
-    var id: String?
+    var id: String? = nil
     var email: String
     var name: String
     var profileImageURL: String?

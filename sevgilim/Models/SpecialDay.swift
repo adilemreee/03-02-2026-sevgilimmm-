@@ -7,7 +7,7 @@ import Foundation
 import FirebaseFirestore
 
 struct SpecialDay: Identifiable, Codable {
-    @DocumentID var id: String?
+    var id: String? = nil
     let relationshipId: String
     let title: String
     let date: Date

@@ -12,7 +12,7 @@ enum PhotoMediaType: String, Codable {
 }
 
 struct Photo: Identifiable, Codable {
-    @DocumentID var id: String?
+    var id: String? = nil
     var relationshipId: String
     var imageURL: String
     var thumbnailURL: String?

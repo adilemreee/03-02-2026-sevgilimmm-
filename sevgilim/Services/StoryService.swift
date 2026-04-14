@@ -19,11 +19,23 @@ class StoryService: ObservableObject {
     private let db = Firestore.firestore()
     private let storage = Storage.storage()
     private var listener: ListenerRegistration?
+    private let offlineCache = OfflineDataManager.shared
     
     // Story'leri dinle (real-time)
     func listenToStories(relationshipId: String, currentUserId: String) {
         listener?.remove()
         listener = nil
+        
+        // 🔥 Offline-first: Önce önbellekten yükle
+        if let cachedStories = offlineCache.loadStories(), !cachedStories.isEmpty {
+            let activeStories = cachedStories.filter { !$0.isExpired }
+            self.stories = activeStories
+            self.userStories = activeStories.filter { $0.createdBy == currentUserId }
+                .sorted { $0.createdAt < $1.createdAt }
+            self.partnerStories = activeStories.filter { $0.createdBy != currentUserId }
+                .sorted { $0.createdAt < $1.createdAt }
+            print("⚡ StoryService: \(activeStories.count) story önbellekten yüklendi")
+        }
         
         listener = db.collection("stories")
             .whereField("relationshipId", isEqualTo: relationshipId)
@@ -40,7 +52,7 @@ class StoryService: ObservableObject {
                 // Story'leri parse et
                 var fetchedStories: [Story] = []
                 for doc in documents {
-                    if let story = try? doc.data(as: Story.self) {
+                    if let story = try? FirestoreDocumentDecoder.decode(Story.self, from: doc) {
                         fetchedStories.append(story)
                     }
                 }
@@ -59,6 +71,9 @@ class StoryService: ObservableObject {
                         }
                     }
                 }
+                
+                // 💾 Önbelleğe kaydet
+                self.offlineCache.saveStories(activeStories)
                 
                 Task { @MainActor in
                     self.stories = activeStories
@@ -299,7 +314,7 @@ class StoryService: ObservableObject {
         let storyRef = db.collection("stories").document(storyId)
         let document = try await storyRef.getDocument()
         
-        if let story = try? document.data(as: Story.self) {
+        if let story = try? FirestoreDocumentDecoder.decode(Story.self, from: document) {
             // Storage'dan fotoğrafı sil
             if URL(string: story.photoURL) != nil {
                 let photoRef = storage.reference(forURL: story.photoURL)
@@ -339,7 +354,7 @@ class StoryService: ObservableObject {
             .getDocuments()
         
         for document in snapshot.documents {
-            if let story = try? document.data(as: Story.self), story.isExpired {
+            if let story = try? FirestoreDocumentDecoder.decode(Story.self, from: document), story.isExpired {
                 try await deleteStory(storyId: story.id ?? "")
             }
         }
@@ -352,7 +367,7 @@ class StoryService: ObservableObject {
         
         // Mevcut story'yi al
         let document = try await storyRef.getDocument()
-        guard var story = try? document.data(as: Story.self) else { return }
+        guard var story = try? FirestoreDocumentDecoder.decode(Story.self, from: document) else { return }
         
         // likedBy'ı initialize et (eski story'ler için)
         var currentLikedBy = story.likedBy ?? []

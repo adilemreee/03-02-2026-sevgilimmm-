@@ -57,7 +57,7 @@ enum MoodFeeling: String, CaseIterable, Codable, Identifiable {
 }
 
 struct MoodStatus: Identifiable, Codable {
-    @DocumentID var id: String?
+    var id: String? = nil
     var relationshipId: String
     var userId: String
     var moodRawValue: String

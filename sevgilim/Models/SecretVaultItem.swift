@@ -12,7 +12,7 @@ enum SecretMediaType: String, Codable {
 }
 
 struct SecretVaultItem: Identifiable, Codable {
-    @DocumentID var id: String?
+    var id: String? = nil
     var relationshipId: String
     var downloadURL: String
     var thumbnailURL: String?

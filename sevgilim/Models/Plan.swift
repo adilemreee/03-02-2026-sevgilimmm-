@@ -7,7 +7,7 @@ import Foundation
 import FirebaseFirestore
 
 struct Plan: Identifiable, Codable {
-    @DocumentID var id: String?
+    var id: String? = nil
     var relationshipId: String
     var title: String
     var description: String?
@@ -31,4 +31,3 @@ struct Plan: Identifiable, Codable {
         case completedAt
     }
 }
-

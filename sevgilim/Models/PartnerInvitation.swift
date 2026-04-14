@@ -4,10 +4,9 @@
 //
 
 import Foundation
-import FirebaseFirestore
 
 struct PartnerInvitation: Identifiable, Codable {
-    @DocumentID var id: String?
+    var id: String? = nil
     var senderUserId: String
     var senderName: String
     var senderEmail: String
@@ -35,4 +34,3 @@ struct PartnerInvitation: Identifiable, Codable {
         case respondedAt
     }
 }
-

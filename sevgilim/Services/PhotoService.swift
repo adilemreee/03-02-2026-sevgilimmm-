@@ -15,6 +15,7 @@ class PhotoService: ObservableObject {
     private let db = Firestore.firestore()
     private var listener: ListenerRegistration?
     private let photosLimit = 50 // Load first 50 photos for performance
+    private let offlineCache = OfflineDataManager.shared
     
     func listenToPhotos(relationshipId: String) {
         // Remove existing listener before creating new one
@@ -22,6 +23,13 @@ class PhotoService: ObservableObject {
         listener = nil
         
         isLoading = true
+        
+        // 🔥 Offline-first: Önce önbellekten yükle (anında göster)
+        if let cachedPhotos = offlineCache.loadPhotos(), !cachedPhotos.isEmpty {
+            self.photos = cachedPhotos
+            self.isLoading = false
+            print("⚡ PhotoService: \(cachedPhotos.count) fotoğraf önbellekten yüklendi")
+        }
         
         listener = db.collection("photos")
             .whereField("relationshipId", isEqualTo: relationshipId)
@@ -47,13 +55,16 @@ class PhotoService: ObservableObject {
                 
                 // Process only changed documents for better performance
                 let newPhotos = documents.compactMap { doc -> Photo? in
-                    try? doc.data(as: Photo.self)
+                    try? FirestoreDocumentDecoder.decode(Photo.self, from: doc)
                 }
                 
                 Task { @MainActor in
                     self.photos = newPhotos
                     self.isLoading = false
-
+                    
+                    // 💾 Önbelleğe kaydet
+                    self.offlineCache.savePhotos(newPhotos)
+                    
                     // Preload thumbnails for better UX (daha agresif)
                     self.preloadThumbnails(photos: newPhotos)
                 }

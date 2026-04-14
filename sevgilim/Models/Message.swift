@@ -7,7 +7,7 @@ import Foundation
 import FirebaseFirestore
 
 struct Message: Identifiable, Codable {
-    @DocumentID var id: String?
+    var id: String? = nil
     var relationshipId: String
     var senderId: String
     var senderName: String

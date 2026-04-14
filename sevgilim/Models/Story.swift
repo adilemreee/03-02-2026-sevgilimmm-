@@ -12,7 +12,7 @@ enum StoryMediaType: String, Codable {
 }
 
 struct Story: Identifiable, Codable {
-    @DocumentID var id: String?
+    var id: String? = nil
     let photoURL: String
     let thumbnailURL: String?
     let mediaType: StoryMediaType
@@ -51,7 +51,7 @@ struct Story: Identifiable, Codable {
     // Codable init - backward compat için optional decode
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        _id = try container.decode(DocumentID<String>.self, forKey: .id)
+        id = try container.decodeIfPresent(String.self, forKey: .id)
         photoURL = try container.decode(String.self, forKey: .photoURL)
         thumbnailURL = try container.decodeIfPresent(String.self, forKey: .thumbnailURL)
         mediaType = try container.decodeIfPresent(StoryMediaType.self, forKey: .mediaType) ?? .photo
@@ -69,6 +69,7 @@ struct Story: Identifiable, Codable {
     
     // Normal init
     init(photoURL: String, thumbnailURL: String?, mediaType: StoryMediaType, duration: Double?, createdBy: String, createdByName: String, createdByPhotoURL: String?, relationshipId: String, createdAt: Date, viewedBy: [String], viewedAt: [String: Date] = [:], likedBy: [String]?, likeTimestamps: [String: Date] = [:]) {
+        self.id = nil
         self.photoURL = photoURL
         self.thumbnailURL = thumbnailURL
         self.mediaType = mediaType

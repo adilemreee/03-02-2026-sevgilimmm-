@@ -4,10 +4,9 @@
 //
 
 import Foundation
-import FirebaseFirestore
 
 struct Memory: Identifiable, Codable {
-    @DocumentID var id: String?
+    var id: String? = nil
     var relationshipId: String
     var title: String
     var content: String
@@ -57,8 +56,7 @@ struct Memory: Identifiable, Codable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         
-        // NOT: id'yi DECODE ETMİYORUZ! @DocumentID otomatik halleder
-        _id = try container.decode(DocumentID<String>.self, forKey: .id)
+        id = try container.decodeIfPresent(String.self, forKey: .id)
         
         relationshipId = try container.decode(String.self, forKey: .relationshipId)
         title = try container.decode(String.self, forKey: .title)
@@ -118,7 +116,7 @@ struct Memory: Identifiable, Codable {
         likes: [String] = [],
         comments: [Comment] = []
     ) {
-        self._id = DocumentID(wrappedValue: id)
+        self.id = id
         self.relationshipId = relationshipId
         self.title = title
         self.content = content
@@ -149,5 +147,3 @@ struct Comment: Identifiable, Codable {
         case createdAt
     }
 }
-
-
