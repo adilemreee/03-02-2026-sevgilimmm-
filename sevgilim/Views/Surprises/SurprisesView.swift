@@ -131,6 +131,9 @@ struct SurprisesView: View {
             } message: {
                 Text("Bu sürprizi silmek istediğinizden emin misiniz?")
             }
+            .onAppear {
+                loadSurprises()
+            }
         }
     }
     
@@ -253,6 +256,15 @@ struct SurprisesView: View {
     }
     
     // MARK: - Functions
+    
+    private func loadSurprises() {
+        guard let userId = authService.currentUser?.id,
+              let relationshipId = relationshipService.currentRelationship?.id else {
+            return
+        }
+        
+        surpriseService.listenToSurprises(relationshipId: relationshipId, userId: userId)
+    }
     
     private func markSurpriseAsOpened(_ surprise: Surprise) {
         Task {

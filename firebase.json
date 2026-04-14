@@ -1,6 +1,7 @@
 {
   "firestore": {
-    "rules": "sevgilim/firebase/firestore.rules"
+    "rules": "sevgilim/firebase/firestore.rules",
+    "indexes": "firestore.indexes.json"
   },
   "storage": {
     "rules": "sevgilim/firebase/storage.rules"

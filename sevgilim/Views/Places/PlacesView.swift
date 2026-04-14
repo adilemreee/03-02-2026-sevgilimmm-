@@ -187,6 +187,11 @@ struct PlacesView: View {
                 .environmentObject(placeService)
                 .environmentObject(themeManager)
         }
+        .onAppear {
+            if let relationshipId = authService.currentUser?.relationshipId {
+                placeService.listenToPlaces(relationshipId: relationshipId)
+            }
+        }
     }
 }
 

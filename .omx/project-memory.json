@@ -1,0 +1,79 @@
+{
+  "techStack": {
+    "app": "SwiftUI iOS app with Firebase Auth, Firestore, Storage, Messaging",
+    "backend": "Firebase Cloud Functions (Node.js 22, firebase-functions v6, firebase-admin v12)",
+    "targets": [
+      "sevgilim app",
+      "sevgilimTests",
+      "sevgilimWidgetExtension"
+    ],
+    "packages": [
+      "firebase-ios-sdk via Swift Package Manager"
+    ]
+  },
+  "structure": {
+    "entrypoints": [
+      "sevgilim/sevgilimApp.swift",
+      "sevgilim/ContentView.swift",
+      "functions/index.js"
+    ],
+    "appLayers": [
+      "Models",
+      "Services",
+      "ViewModels",
+      "Views",
+      "Utilities",
+      "Shared"
+    ],
+    "notableSubsystems": [
+      "offline-first cache and sync queue",
+      "push notification routing + unread count sync",
+      "story/chat/media flows",
+      "secret vault",
+      "proximity tracking",
+      "widget via App Group shared defaults"
+    ]
+  },
+  "conventions": {
+    "patterns": [
+      "EnvironmentObject-based dependency injection through AppDependencies",
+      "service-per-Firestore-collection pattern",
+      "offline-first listeners load disk cache before attaching Firestore snapshot listeners",
+      "MainTabView starts listeners in staggered phases to reduce launch cost",
+      "HomeViewModel throttles merged objectWillChange publishers to reduce redraw storms"
+    ]
+  },
+  "build": {
+    "notes": [
+      "README exists but project setup still depends on local Firebase plist and Firebase rules paths",
+      "functions/package.json uses npm lint predeploy",
+      "firebase.json points to missing rules files under sevgilim/firebase/"
+    ]
+  },
+  "notes": [
+    {
+      "category": "architecture",
+      "content": "Broad consumer app for couples: auth + partner invitation, memories, photos/videos, notes, plans, songs via Spotify search, movies, places, chat with typing/reactions/delete scopes, stories, moods, surprises, secret vault, special days, notifications, proximity, widget day counter."
+    },
+    {
+      "category": "architecture",
+      "content": "Cloud Functions file is monolithic (~3.1k LOC) and owns 28 triggers/endpoints including push fanout, unread notification count sync, creation/update triggers, scheduled reminders for plans/special days/surprises/memory flashbacks/inactive couple nudges."
+    },
+    {
+      "category": "risk",
+      "content": "Security smell: Spotify client id and client secret are embedded in sevgilim/Info.plist and consumed by SpotifyService fallback; secrets should not live in client bundle."
+    },
+    {
+      "category": "risk",
+      "content": "Repo hygiene issues: root contains a second legacy index.js for functions, tracked build artifacts/build and functions/node_modules, multiple .DS_Store files, and firebase.json references missing Firestore/Storage rules files."
+    },
+    {
+      "category": "risk",
+      "content": "Test suite is partial and stale: only 8 Swift test files, mixed XCTest and Swift Testing styles, and TestDataFactory.makeMemory still calls Memory initializer with removed photoURL parameter, indicating tests may not be runnable without cleanup."
+    },
+    {
+      "category": "risk",
+      "content": "Firestore index coverage appears incomplete: firestore.indexes.json defines only one composite index while MessageService explicitly falls back when ordered message query hits failedPrecondition due to missing index."
+    }
+  ]
+}

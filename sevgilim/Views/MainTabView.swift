@@ -32,7 +32,6 @@ struct MainTabView: View {
     @State private var homeViewModel: HomeViewModel?
     
     @State private var selectedTab = 0
-    @State private var activeListenerSessionKey: String?
     
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -87,7 +86,7 @@ struct MainTabView: View {
         }
         .ignoresSafeArea(.keyboard)
         .onAppear {
-            syncListenerOwnership()
+            startServicesStaggered()
             handlePendingNavigation()
             syncNotificationBadge(authService.currentUser?.unreadNotificationCount ?? 0)
         }
@@ -125,9 +124,6 @@ struct MainTabView: View {
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
             syncNotificationBadge(authService.currentUser?.unreadNotificationCount ?? 0)
         }
-        .onChange(of: listenerSessionKey) { _, _ in
-            syncListenerOwnership()
-        }
     }
     
     /// Staggered service start to avoid CPU spike on launch
@@ -143,9 +139,6 @@ struct MainTabView: View {
         relationshipService.listenToRelationship(relationshipId: relationshipId)
         surpriseService.listenToSurprises(relationshipId: relationshipId, userId: userId)
         notificationHistoryService.listenToNotifications(userId: userId)
-        specialDayService.listenToSpecialDays(relationshipId: relationshipId)
-        moodService.listenToMoodStatuses(relationshipId: relationshipId)
-        messageService.listenToUnreadMessagesCount(relationshipId: relationshipId, currentUserId: userId)
         
         // Phase 2: Secondary data — needed when user scrolls or switches tabs
         Task { @MainActor in
@@ -167,49 +160,6 @@ struct MainTabView: View {
             secretVaultService.listenToVault(relationshipId: relationshipId)
             print("🎬 Phase 3 servisler başlatıldı — Tüm servisler hazır")
         }
-    }
-
-    private var listenerSessionKey: String? {
-        guard let currentUser = authService.currentUser,
-              let userId = currentUser.id,
-              let relationshipId = currentUser.relationshipId else {
-            return nil
-        }
-        return "\(userId):\(relationshipId)"
-    }
-
-    private func syncListenerOwnership() {
-        guard let sessionKey = listenerSessionKey else {
-            if activeListenerSessionKey != nil {
-                stopOwnedServices()
-                activeListenerSessionKey = nil
-            }
-            return
-        }
-
-        guard activeListenerSessionKey != sessionKey else { return }
-        stopOwnedServices()
-        activeListenerSessionKey = sessionKey
-        startServicesStaggered()
-    }
-
-    private func stopOwnedServices() {
-        relationshipService.stopListening()
-        surpriseService.stopListening()
-        notificationHistoryService.stopListening()
-        specialDayService.stopListening()
-        moodService.stopListening()
-        messageService.cleanup()
-        memoryService.stopListening()
-        photoService.stopListening()
-        noteService.stopListening()
-        planService.stopListening()
-        movieService.stopListening()
-        placeService.stopListening()
-        songService.stopListening()
-        storyService.stopListening()
-        secretVaultService.stopListening()
-        proximityService.stopTracking()
     }
     
     private func handlePendingNavigation() {

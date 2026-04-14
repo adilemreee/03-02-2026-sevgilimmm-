@@ -142,6 +142,7 @@ final class AppDependencies: ObservableObject {
     
     /// Çıkış yaparken tüm önbellekleri temizle
     func clearAllCaches() {
+        OfflineDataManager.shared.clearAll()
         Task {
             await ImageCacheService.shared.clearCache()
         }

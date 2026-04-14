@@ -87,6 +87,17 @@ const notificationCooldownSecondsByType = Object.freeze({
   on_this_day_memory: 12 * 60 * 60,
   inactive_couple_nudge: 24 * 60 * 60,
 });
+const passiveNotificationTypes = new Set([
+  "inactive_couple_nudge",
+  "on_this_day_memory",
+  "plan_reminder",
+  "plan_tomorrow",
+  "special_day_plan_missing",
+  "special_day_reminder",
+  "special_day_surprise_missing",
+  "special_day_upcoming",
+  "surprise_reveal_due",
+]);
 const genericNotificationIdentityKeys = Object.freeze([
   "memoryId",
   "photoId",
@@ -151,6 +162,14 @@ const sanitiseData = (data) => {
   }
 
   return Object.keys(clean).length ? clean : undefined;
+};
+
+const shouldCountTowardUnread = (type) => {
+  if (typeof type !== "string" || !type.length) {
+    return true;
+  }
+
+  return !passiveNotificationTypes.has(type.toLowerCase());
 };
 
 const normaliseNotificationPreferences = (value) => {
@@ -939,6 +958,7 @@ const persistNotificationHistory = async ({
 
   userIds.forEach((userId) => {
     const state = deliveryStates.get(userId) || {};
+    const countsTowardUnread = shouldCountTowardUnread(metadata?.type);
     const ref = firestore.collection("users")
         .doc(userId)
         .collection("notifications")
@@ -950,13 +970,18 @@ const persistNotificationHistory = async ({
       title: notification.title,
       body: notification.body,
       metadata: metadata || {},
-      isRead: false,
+      isRead: !countsTowardUnread,
       createdAt: fieldValue.serverTimestamp(),
+      countsTowardUnread,
       deliveryState: state.deliveryState || "inbox_only",
       tokenCount: state.tokenCount || 0,
       successCount: state.successCount || 0,
       failureCount: state.failureCount || 0,
     };
+
+    if (!countsTowardUnread) {
+      doc.readAt = fieldValue.serverTimestamp();
+    }
 
     if (metadata?.relationshipId) {
       doc.relationshipId = metadata.relationshipId;
@@ -977,7 +1002,9 @@ const persistNotificationHistory = async ({
 };
 
 const isUnreadNotificationDocument = (data) => {
-  return !!data && data.isRead !== true;
+  return !!data &&
+    data.isRead !== true &&
+    data.countsTowardUnread !== false;
 };
 
 const sendPushToUsers = async ({
