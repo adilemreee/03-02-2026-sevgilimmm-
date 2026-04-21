@@ -1,6 +1,0 @@
-{
-  "last_turn_at": "2026-04-14T16:25:36.356Z",
-  "turn_count": 50,
-  "last_progress_at": "2026-04-14T16:25:36.356Z",
-  "last_agent_output": "Commit oluşturuldu: `19401c1` (`Prevent cached Firestore IDs from polluting runtime state`).\n\nBu com"
-}
